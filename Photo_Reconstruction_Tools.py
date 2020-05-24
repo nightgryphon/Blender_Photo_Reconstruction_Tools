@@ -17,6 +17,7 @@ import mathutils
 from mathutils import Vector
 import bpy_extras
 from bpy_extras.object_utils import world_to_camera_view
+import os
 
 
 addon_keymaps = []
@@ -72,13 +73,44 @@ def show_camera(scene, cam, pivot = False):
             r3d.view_camera_offset = [ c.x/zoom, c.y/zoom ]
 
 
+def rotate_2d(xy, radians):
+    """rotate a point around the origin (0, 0)."""
+    x, y = xy
+    xx = x * math.cos(radians) + y * math.sin(radians)
+    yy = -x * math.sin(radians) + y * math.cos(radians)
+
+    return xx, yy
+
 def adjust_render_resolution(cam):        
     try:
         f = cam.data['f']
         bg = find_bg(cam)
         if bg:
-            bpy.context.scene.render.resolution_x = bg.image.size[0]
-            bpy.context.scene.render.resolution_y = bg.image.size[1]
+            # TODO adjust camera to fit rotated image
+            # image first fit to camera (bg_image.frame_method) than rotate
+            # how to adjust camera to fit _rotated_ image???
+            # how to calc FOV for such camera????
+            #
+            """
+            a = rotate_2d([bg.image.size[0],bg.image.size[1]], bg.rotation)
+            b = rotate_2d([-bg.image.size[0],bg.image.size[1]], bg.rotation)
+            w = max(abs(a[0]), abs(b[0]))
+            h = max(abs(a[1]), abs(b[1]))
+            print('{:f} x {:f}'.format(w,h))
+            bpy.context.scene.render.resolution_x = w
+            bpy.context.scene.render.resolution_y = h
+            cam.data.angle = 2*math.atan(w/2/f)
+            """
+            if ('rotate_hack' in cam.data) and (cam.data['rotate_hack']):
+                bpy.context.scene.render.resolution_x = bg.image.size[1]
+                bpy.context.scene.render.resolution_y = bg.image.size[0]
+                bg.scale= bg.image.size[1]/bg.image.size[0]
+            else:
+                bpy.context.scene.render.resolution_x = bg.image.size[0]
+                bpy.context.scene.render.resolution_y = bg.image.size[1]
+                bg.scale=1
+            # bg_image.frame_method = CROP
+            # camera.sensor_fit = auto 
             cam.data.angle = 2*math.atan(max(bg.image.size)/2/f)
             return True
         
@@ -130,13 +162,14 @@ class Recon_SwitchCamera(bpy.types.Operator):
     bl_idname = "reconstruction.switch_cam"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Change Camera"         # Display name in the interface.
 #    bl_options = {'REGISTER'}
+    bl_options = {'REGISTER', 'UNDO'}
 
     direction: bpy.props.EnumProperty(
         items=[('next', "Next camera", ""),
                ('prev', "Prev caamera", "")],
         name="Direction", 
         default='next',
-#        options={'HIDDEN'} 
+        options={'HIDDEN'} 
         )
         
     only_visible: bpy.props.BoolProperty(
@@ -162,12 +195,15 @@ class Recon_SwitchCamera(bpy.types.Operator):
         scene = context.scene
         cams = [obj for obj in scene.objects if obj.type == 'CAMERA']
 
-        for index, item in enumerate(cams):
-            item.hide_set
-            if scene.camera.name == item.name:
-                break
+        if scene.camera:
+            for index, item in enumerate(cams):
+                item.hide_set
+                if scene.camera.name == item.name:
+                    break
+            else:
+                index = -1
         else:
-            index = -1
+            index = 0
 
         if index>=0:
             view_target = False
@@ -208,6 +244,63 @@ class Recon_SwitchCamera(bpy.types.Operator):
 
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
+
+
+class Recon_RotateCamera(bpy.types.Operator):
+    bl_idname = "reconstruction.rotate_cam"        # Unique identifier for buttons and menu items to reference.
+    bl_label = "Rotate camera"         # Display name in the interface.
+#    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {'REGISTER', 'UNDO'}
+
+    angle: bpy.props.FloatProperty(
+        name='Angle (d)', 
+        description = 'Angle to rotate camera',
+        default = 0,
+        soft_min=-180, 
+        soft_max=180
+        )
+        
+    rotate_hack: bpy.props.BoolProperty(
+        name="Toggle rotated img hack",
+        description="Hack rotated images fit. Swap W/H and scale", 
+        default=False,
+#        options={'HIDDEN'} 
+        )
+        
+    def execute(self, context):        # execute() is called when running the operator.
+        scene = context.scene
+        camera = scene.camera
+
+        if camera:
+            background_images = camera.data.background_images
+
+#            bg = None
+#            for bg_image in background_images:
+#                if bg_image.image:
+#                    if bg_image.image.name == camera.name:
+#                        # image exists
+#                        bg = bg_image
+#                        break
+            bg = find_bg(camera)
+    
+            if bg:
+                bg.rotation -= math.radians(self.angle)
+                camera.rotation_mode = 'AXIS_ANGLE' # adjust euler rotation center to camera position for ZXY mode
+#                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                camera.rotation_mode = 'ZXY'
+                camera.rotation_euler[2] += math.radians(self.angle)
+                
+                #fit sensor
+                if self.rotate_hack:
+                    if ('rotate_hack' in camera.data) and (camera.data['rotate_hack']):
+                        camera.data['rotate_hack'] = 0
+                    else:
+                        camera.data['rotate_hack'] = 1
+
+                adjust_render_resolution(camera)
+
+
+        return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 class Recon_TogglePhoto(bpy.types.Operator):
     bl_idname = "reconstruction.toggle_photo"        # Unique identifier for buttons and menu items to reference.
@@ -251,7 +344,7 @@ class Recon_ToggleMesh(bpy.types.Operator):
 class Recon_SaveOrientation(bpy.types.Operator):
     bl_idname = "reconstruction.save_orientation"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Save camera orientation"         # Display name in the interface.
-#    bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
+    bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
 
     def execute(self, context):        # execute() is called when running the operator.
 
@@ -286,7 +379,7 @@ class Recon_SaveOrientation(bpy.types.Operator):
 class Recon_SwitchToOrientation(bpy.types.Operator):
     bl_idname = "reconstruction.camera2orientation"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Switch Camera by Orientation"         # Display name in the interface.
-#    bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
+    bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
 
     def execute(self, context):        # execute() is called when running the operator.
 
@@ -306,15 +399,149 @@ class Recon_SwitchToOrientation(bpy.types.Operator):
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
+
 class Recon_LoadImages(bpy.types.Operator):
     bl_idname = "reconstruction.load_image"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Load images for selected cameras"         # Display name in the interface.
 #    bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
 
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+
+                
     def execute(self, context):        # execute() is called when running the operator.
+        print('Loading...')
 
+        settings = context.scene.recon_settings
+        camera_angle = 2*math.atan(1280/2/1035.23)
 
+        sel_objs = [obj for obj in bpy.context.selected_objects if obj.type == 'CAMERA']
+        for camera in sel_objs:
+            background_images = camera.data.background_images
+
+            img_path = os.path.join(settings.image_path, camera.name+settings.image_ext)
+            print("Camera image: "+img_path)
+            try:
+                img = bpy.data.images.load(img_path)
+                img.name = camera.name
+                img.pack()
+
+                print('    {:d}x{:d}'.format(img.size[0], img.size[1]))
+
+                bg = None
+                bg_angle = 0
+                for bg_image in background_images:
+                    if bg_image.image:
+                        if bg_image.image.name == camera.name:
+                            # image exists
+                            bg_angle = bg.rotation
+                            if settings.replace_existing:
+                                print('Removing old image')
+                                bpy.data.images.remove(bg_image.image)
+                                bg_image.image = None
+                            bg = bg_image
+                            break
+    
+                if not bg:
+                    bg = background_images.new()
+
+                if bg.image:
+                    break
+                
+                print('Attaching new image')
+                bg.show_background_image = True
+                if hasattr(bg, 'view_axis'):
+                    # only show the background image when looking through the camera (< 2.8)
+                    bg.view_axis = 'CAMERA'
+
+                bg.image = img
+                bg.display_depth = 'FRONT'
+                bg.frame_method = 'CROP'
+                bg.alpha = 0.6
+                bg.rotation = bg_angle
+        
+                camera.data.lens_unit = 'FOV'
+                camera.data.angle = 2*math.atan(img.size[0]/2/settings.camera_f)
+                camera.data['f'] = settings.camera_f
+
+                camera.data.show_passepartout = False
+                camera.data.show_background_images = True
+            except:
+                print("Failed!")
+
+        print('Done loading.')
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
+
+
+class Recon_Settings(bpy.types.PropertyGroup):
+    image_path: bpy.props.StringProperty(
+        name = 'Images dir',
+        description = 'Directory to load camera images from',
+        default = os.path.dirname(bpy.data.filepath), 
+        maxlen = 1024, 
+        subtype = 'DIR_PATH'
+        )
+
+    image_ext: bpy.props.StringProperty(
+        name = 'Image ext',
+        description = 'Image files extension',
+        default = '.jpg', 
+        maxlen = 32
+        )
+
+    camera_f: bpy.props.FloatProperty(
+        name='Focal length (px)', 
+        description = 'Focal length in pixels',
+        default = 1024,
+        min=0, 
+        soft_max=2048
+        )
+        
+    replace_existing: bpy.props.BoolProperty(
+        name='Reload images', 
+        description = 'Replace already loaded images',
+        default = True
+        )
+
+class Recon_LoadImages_panel(bpy.types.Panel):
+    bl_label = "Load Images"
+    bl_category = "Photo Reconstruction"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+
+    def draw(self, context):
+        layout = self.layout
+#        row = layout.row()
+
+        settings = context.scene.recon_settings
+        layout.prop(settings, "image_path")
+        layout.prop(settings, "image_ext")
+        layout.prop(settings, "camera_f")
+        layout.prop(settings, "replace_existing")
+        layout.operator('reconstruction.load_image', text = 'Load images')
+
+
+class Recon_RotateCam_panel(bpy.types.Panel):
+    bl_label = "Rotate camera"
+    bl_category = "Photo Reconstruction"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()
+
+        op = row.operator('reconstruction.rotate_cam', text = '90 CCW')
+        op.angle=-90
+        op.rotate_hack = 1
+
+        op = row.operator('reconstruction.rotate_cam', text = '90 CW')
+        op.angle=90
+        op.rotate_hack = 1
+
+        op = layout.operator('reconstruction.rotate_cam', text = 'Flip sensor')
+        op.angle=0
+        op.rotate_hack = 1
 
 
 class Recon_Menu(bpy.types.Menu):
@@ -332,21 +559,30 @@ class Recon_Menu(bpy.types.Menu):
         layout.operator(Recon_SaveOrientation.bl_idname, text=Recon_SaveOrientation.bl_label)
         layout.operator(Recon_SwitchToOrientation.bl_idname, text=Recon_SwitchToOrientation.bl_label)
 
+        layout.operator_context = 'INVOKE_DEFAULT'
+#        layout.operator(Recon_LoadImages.bl_idname, text=Recon_LoadImages.bl_label)
+
 
 def draw_menu(self, context):
     self.layout.menu(Recon_Menu.bl_idname)    
 
+classes = ( Recon_SwitchCamera, Recon_TogglePhoto, Recon_ToggleMesh,
+            Recon_SaveOrientation, Recon_SwitchToOrientation,
+            Recon_LoadImages,
+            Recon_Settings, Recon_LoadImages_panel, 
+            Recon_RotateCamera, Recon_RotateCam_panel, 
+            Recon_Menu)
+
+
 def register():
-    wm = bpy.context.window_manager
+    for cls in classes:
+        bpy.utils.register_class(cls)
 
+    bpy.types.Scene.recon_settings = bpy.props.PointerProperty(type=Recon_Settings)
 
-    bpy.utils.register_class(Recon_SwitchCamera)
-    bpy.utils.register_class(Recon_TogglePhoto)
-    bpy.utils.register_class(Recon_ToggleMesh)
-    bpy.utils.register_class(Recon_SaveOrientation)
-    bpy.utils.register_class(Recon_SwitchToOrientation)
-    bpy.utils.register_class(Recon_Menu)
     bpy.types.VIEW3D_MT_view.append(draw_menu)
+
+    wm = bpy.context.window_manager
 
     km = wm.keyconfigs.addon.keymaps.new(name = "Window",space_type='EMPTY', region_type='WINDOW')
     kmi = km.keymap_items.new(Recon_SwitchCamera.bl_idname, 'RIGHT_ARROW', 'PRESS', ctrl=True, shift=False)
@@ -372,18 +608,16 @@ def register():
 
 
 def unregister():
-    bpy.types.VIEW3D_MT_view.remove(draw_menu)
-    bpy.utils.unregister_class(Recon_SwitchCamera)
-    bpy.utils.unregister_class(Recon_TogglePhoto)
-    bpy.utils.unregister_class(Recon_ToggleMesh)
-    bpy.utils.unregister_class(Recon_SaveOrientation)
-    bpy.utils.unregister_class(Recon_SwitchToOrientation)
-    bpy.utils.unregister_class(Recon_Menu)
-    
     for km, kmi in addon_keymaps:
         km.keymap_items.remove(kmi)
     addon_keymaps.clear()
 
+    bpy.types.VIEW3D_MT_view.remove(draw_menu)
+
+    for cls in classes:
+        bpy.utils.unregister_class(cls)
+    
+    del bpy.types.Scene.recon_settings
 
 # This allows you to run the script directly from Blender's Text editor
 # to test the add-on without having to install it.
