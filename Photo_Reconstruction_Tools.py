@@ -544,6 +544,20 @@ class Recon_RotateCam_panel(bpy.types.Panel):
         op.rotate_hack = 1
 
 
+class Recon_Orientations_panel(bpy.types.Panel):
+    bl_label = "Orientations"
+    bl_category = "Photo Reconstruction"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+
+    def draw(self, context):
+        layout = self.layout
+        #row = layout.row()
+
+        layout.operator(Recon_SaveOrientation.bl_idname, text="Save orientation")
+        layout.operator(Recon_SwitchToOrientation.bl_idname, text="Switch camera")
+
+
 class Recon_Menu(bpy.types.Menu):
     bl_label = "Photo Reconstruction"
     bl_idname = "VIEW3D_MT_reconstruction_menu"
@@ -571,6 +585,7 @@ classes = ( Recon_SwitchCamera, Recon_TogglePhoto, Recon_ToggleMesh,
             Recon_LoadImages,
             Recon_Settings, Recon_LoadImages_panel, 
             Recon_RotateCamera, Recon_RotateCam_panel, 
+            Recon_Orientations_panel, 
             Recon_Menu)
 
 
