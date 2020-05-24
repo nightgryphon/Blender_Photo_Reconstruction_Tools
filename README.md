@@ -9,6 +9,9 @@ This plugin provide tools to:
 
 
 ## Import cameras from AgiSoft Photo Scan to Blender:
+
+![Imported camera example](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/Screen1024.png)
+
 At Photo Scan:
 
 - export model to file supporting cameras export like .DAE
