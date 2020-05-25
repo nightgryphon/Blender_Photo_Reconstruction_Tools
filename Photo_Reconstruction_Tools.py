@@ -123,10 +123,13 @@ def adjust_render_resolution(cam):
 
 def get_selected_vertices():
     if bpy.context.active_object and bpy.context.active_object.type == 'MESH':
-        mode = bpy.context.active_object.mode
+        obj = bpy.context.active_object
+        mat_world = obj.matrix_world
+
+        mode = obj.mode
         # we need to switch from Edit mode to Object mode so the selection gets updated
         bpy.ops.object.mode_set(mode='OBJECT')
-        selectedVerts = [v.co for v in bpy.context.active_object.data.vertices if v.select]
+        selectedVerts = [mat_world @ v.co for v in obj.data.vertices if v.select]
         # back to whatever mode we were in
         bpy.ops.object.mode_set(mode=mode)
     
@@ -137,15 +140,13 @@ def get_selected_vertices():
 
 def is_visible(verts_co, cam):
     scene = bpy.context.scene
-    obj = bpy.context.active_object
-    mat_world = obj.matrix_world
     cs, ce = cam.data.clip_start, cam.data.clip_end
     res = False
     
     adjust_render_resolution(cam)
     
     for v in verts_co:
-        co_ndc = world_to_camera_view(scene, cam, mat_world @ v)
+        co_ndc = world_to_camera_view(scene, cam, v)
         #check wether point is inside frustum
         if (0.0 < co_ndc.x < 1.0 and
             0.0 < co_ndc.y < 1.0 and
@@ -157,6 +158,24 @@ def is_visible(verts_co, cam):
     return res
 
             
+def camera2camera(target, camera):
+    """
+    cw = camera.matrix_world @ camera.location
+    c = target.perspective_matrix @ Vector(( cw[0], cw[1], cw[2], 1.0))
+    if c.w>0:
+        c.x = c.x/c.w
+        c.y = c.y/c.w
+        c.z = c.z/c.w
+        c.w = 1.0
+    return c
+    """
+#    return world_to_camera_view(bpy.context.scene, target, camera.matrix_world @ camera.location)
+    return world_to_camera_view(bpy.context.scene, target, camera.matrix_world @ camera.location)
+
+
+
+nav_last_dir = 'unknown'
+nav_loop_filter = []    
 
 class Recon_SwitchCamera(bpy.types.Operator):
     bl_idname = "reconstruction.switch_cam"        # Unique identifier for buttons and menu items to reference.
@@ -166,79 +185,120 @@ class Recon_SwitchCamera(bpy.types.Operator):
 
     direction: bpy.props.EnumProperty(
         items=[('next', "Next camera", ""),
-               ('prev', "Prev caamera", "")],
+               ('prev', "Prev caamera", ""),
+               ('showcam', "Show caameras", "")
+               ],
         name="Direction", 
         default='next',
         options={'HIDDEN'} 
         )
         
-    only_visible: bpy.props.BoolProperty(
-        name="Camera must contain selection", 
-        default=True,
-#        options={'HIDDEN'} 
-        )
-        
-    center_selected: bpy.props.BoolProperty(
-        name="Center selected", 
-        default=True,
-#        options={'HIDDEN'} 
-        )
-        
-    hide_other: bpy.props.BoolProperty(
-        name="Hide other cameras", 
-        default=True,
-#        options={'HIDDEN'} 
-        )
-        
-        
     def execute(self, context):        # execute() is called when running the operator.
+        global nav_last_dir
+        global nav_loop_filter
+        
+        settings = context.scene.recon_settings
+
         scene = context.scene
         cams = [obj for obj in scene.objects if obj.type == 'CAMERA']
 
+        if self.direction == 'showcam':
+            for item in cams:
+                item.hide_set(False)
+            return {'FINISHED'}
+
+
+        # loop filter
+#        print(nav_last_dir)
+#        print(nav_loop_filter)
+        if nav_last_dir == self.direction:
+            cams = list(filter(lambda c: not c.name in nav_loop_filter, cams))
+        else:
+            nav_loop_filter = []
+             
+        nav_last_dir = self.direction
+                            
+        # visible filter
+        sel = False
+        if settings.nav_filter_visible:
+            if not sel:
+                sel = get_selected_vertices()
+            if sel:
+                cams = list(filter(lambda c: is_visible(sel, c) , cams))
+
+
         if scene.camera:
+            nav_loop_filter.append(scene.camera.name)
+
+            # angle filter
+            cam_direction = scene.camera.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
+            if settings.nav_filter_angle_enable:            
+                cams = list(filter(lambda c: math.degrees(cam_direction.angle( c.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0)) )) < settings.nav_filter_angle , cams))
+#                print('Filter angle: {:d}'.format(len(cams)))
+
+            # distance filter
+            if settings.nav_filter_distance_enable:            
+                cams = list(filter(lambda c: (scene.camera.location - c.location).length < settings.nav_filter_distance , cams))
+#                print('Filter distance: {:d}'.format(len(cams)))
+
+            # sort modes
+            if settings.nav_sort_mode == 'distance':                
+                m = scene.camera.matrix_world.inverted()
+                cams.sort(key=lambda c: math.copysign( (c.location - scene.camera.location).length, (m @ c.location).x) )
+                
+            if settings.nav_sort_mode == 'camx':
+                m = scene.camera.matrix_world.inverted()
+                cams.sort(key=lambda c:  (m @ c.location).x )
+
+            if settings.nav_sort_mode == 'camy':
+                m = scene.camera.matrix_world.inverted()
+                cams.sort(key=lambda c:  (m @ c.location).y )
+
+            if settings.nav_sort_mode == 'camz':
+                m = scene.camera.matrix_world.inverted()
+                cams.sort(key=lambda c:  (m @ c.location).z )
+
+
+            # find current camera index
             for index, item in enumerate(cams):
                 item.hide_set
                 if scene.camera.name == item.name:
                     break
             else:
                 index = -1
+                
         else:
             index = 0
 
         if index>=0:
-            view_target = False
-            sel = False
-            if self.only_visible or self.center_selected:
-                sel = get_selected_vertices()
-                
-            if self.center_selected and sel:
-                view_target = sum(sel, Vector()) / len(sel)
-                view_target = bpy.context.active_object.matrix_world @ view_target
-
-            if self.only_visible and sel:
-                if self.direction == 'prev':
-                    dir = reversed(range(0,index))
-                else:
-                    dir = range(index+1, len(cams))
-                    
-                for i in dir:
-                    if is_visible(sel, cams[i]):
-                        index = i
-                        break
-                else:
-                    index = -1
+            if self.direction == 'prev':
+                index -= 1
             else:
-                if self.direction == 'prev':
-                    index = index-1
-                else:
-                    index = index+1
-                    if index >= len(cams):
-                        index = -1
+                index += 1
+                if index >= len(cams):
+                    index = -1
                     
         if index>=0:
-            if self.hide_other:
-                for item in cams:
-                    item.hide_set(True)
+            view_target = False
+            if settings.nav_center_selected:
+                if not sel:
+                    sel = get_selected_vertices()
+                if sel:
+                    view_target = sum(sel, Vector()) / len(sel)
+                    view_target = bpy.context.active_object.matrix_world @ view_target
+
+            if settings.nav_hide_other:
+                for obj in scene.objects:
+                    if obj.type == 'CAMERA':
+                        obj.hide_set(True)
+            
+            print('------ Next cam #{:d} ------'.format(index))
+            try:
+                new_cam_direction = cams[index].matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
+                print('Angle diff {:f}'.format(math.degrees(cam_direction.angle(new_cam_direction))))
+                print('Distance {:f}'.format( (cams[index].location - scene.camera.location).length ))
+            except:
+                none
             
             show_camera(scene, cams[index], view_target)
 
@@ -474,6 +534,7 @@ class Recon_LoadImages(bpy.types.Operator):
 
 
 class Recon_Settings(bpy.types.PropertyGroup):
+    # ----- LOAD IMG -------
     image_path: bpy.props.StringProperty(
         name = 'Images dir',
         description = 'Directory to load camera images from',
@@ -503,6 +564,76 @@ class Recon_Settings(bpy.types.PropertyGroup):
         default = True
         )
 
+    # ---- NAV ----
+    nav_center_selected: bpy.props.BoolProperty(
+        name="Center selected", 
+        default=True,
+#        options={'HIDDEN'} 
+        )
+        
+    nav_hide_other: bpy.props.BoolProperty(
+        name="Hide other cameras", 
+        default=True,
+#        options={'HIDDEN'} 
+        )
+        
+    nav_filter_visible: bpy.props.BoolProperty(
+        name="Camera must see selection", 
+        default=True,
+#        options={'HIDDEN'} 
+        )
+        
+    nav_filter_angle_enable: bpy.props.BoolProperty(
+        name="Direction filter", 
+        description = 'Do not switch to camera if its angle differs more than specified',
+        default=False,
+#        options={'HIDDEN'} 
+        )
+        
+    nav_filter_angle: bpy.props.FloatProperty(
+        name='Max angle', 
+        description = 'Maximum angle between this and next cameras',
+        default = 30,
+        min=0, 
+        soft_max=180
+        )
+        
+    nav_filter_distance_enable: bpy.props.BoolProperty(
+        name="Distance filter", 
+        description = 'Filter too far cameras',
+        default=False,
+#        options={'HIDDEN'} 
+        )
+        
+    nav_filter_distance: bpy.props.FloatProperty(
+        name='Max distance', 
+        description = 'Maximum distance to next camera',
+        default = 25,
+        min=0, 
+        soft_max=100
+        )
+        
+#    nav_sort_distance: bpy.props.BoolProperty(
+#        name="Use nearest", 
+#        description = 'Switch to nearest camera',
+#        default=False,
+#        )
+
+    nav_sort_mode: bpy.props.EnumProperty(
+        name="Sort", 
+        description = 'Camera selection order. WARNING some cameras can be skipped from navigation depending on current camera and sort order',
+        items=[('none', "None", ""),
+               ('distance', "Nearest", ""),
+               ('camx', "Camera X", ""),
+               ('camy', "Camera Y", ""),
+               ('camz', "Camera Z", ""),
+               ],
+        default='none',
+        )
+        
+
+
+
 class Recon_LoadImages_panel(bpy.types.Panel):
     bl_label = "Load Images"
     bl_category = "Photo Reconstruction"
@@ -516,8 +647,12 @@ class Recon_LoadImages_panel(bpy.types.Panel):
         settings = context.scene.recon_settings
         layout.prop(settings, "image_path")
         layout.prop(settings, "image_ext")
+
+        layout.separator()
         layout.prop(settings, "camera_f")
         layout.prop(settings, "replace_existing")
+
+        layout.separator()
         layout.operator('reconstruction.load_image', text = 'Load images')
 
 
@@ -542,6 +677,34 @@ class Recon_RotateCam_panel(bpy.types.Panel):
         op = layout.operator('reconstruction.rotate_cam', text = 'Flip sensor')
         op.angle=0
         op.rotate_hack = 1
+
+
+class Recon_Nav_panel(bpy.types.Panel):
+    bl_label = "Navigation"
+    bl_category = "Photo Reconstruction"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+
+    def draw(self, context):
+        layout = self.layout
+
+        settings = context.scene.recon_settings
+        layout.prop(settings, "nav_center_selected")
+        layout.prop(settings, "nav_hide_other")
+        layout.prop(settings, "nav_sort_mode")
+        layout.prop(settings, "nav_filter_visible")
+        layout.separator()
+        layout.prop(settings, "nav_filter_distance_enable")
+        layout.prop(settings, "nav_filter_distance")
+        layout.separator()
+        layout.prop(settings, "nav_filter_angle_enable")
+        layout.prop(settings, "nav_filter_angle")
+
+        layout.separator()
+        row = layout.row()
+        row.operator(Recon_SwitchCamera.bl_idname, text='Prev').direction='prev'
+        row.operator(Recon_SwitchCamera.bl_idname, text='Next').direction='next'
+        layout.operator(Recon_SwitchCamera.bl_idname, text='Show cameras').direction='showcam'
 
 
 class Recon_Orientations_panel(bpy.types.Panel):
@@ -582,10 +745,10 @@ def draw_menu(self, context):
 
 classes = ( Recon_SwitchCamera, Recon_TogglePhoto, Recon_ToggleMesh,
             Recon_SaveOrientation, Recon_SwitchToOrientation,
+            Recon_Nav_panel, Recon_Orientations_panel, 
             Recon_LoadImages,
             Recon_Settings, Recon_LoadImages_panel, 
             Recon_RotateCamera, Recon_RotateCam_panel, 
-            Recon_Orientations_panel, 
             Recon_Menu)
 
 

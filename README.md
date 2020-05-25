@@ -10,7 +10,7 @@ This plugin provide tools to:
 
 ## Import cameras from AgiSoft Photo Scan to Blender:
 
-![Imported camera example](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/Screen1024.png)
+![Imported camera example](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/doc/Screen1024.png)
 
 At Photo Scan:
 
@@ -27,11 +27,32 @@ At Blender:
 - if you wish to force cameras to update check "Reload images" otherwise only missing images will be loaded
 
 
-## Tools:
+## Navigation
+![Navigation panel](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/doc/NavPanel.png)
 
-- Navigate through cameras with Ctrl-Left / Ctrl-Right
+Navigate through cameras with Ctrl-Left / Ctrl-Right
+
+### Center selected
+Put selection center in the middle of viewport
+
+### Hide other cameras
+Hide all cameras except the active one
+
+### Sort
+Criteria to choose next camera
+
+- None: use cameras order within scene data
+- Distance: choose closest camera in selected direction
+- Camera X/Y/Z: choose camera which have closest X/Y/Z coordinate within current camera space
+
+### Filters
+Distance: filter out too large jumps between cameras while navigating  
+Angle: filter cameras with view direction too different from current camera  
+
+## Other tools:
+
 - Change camera orientation with "Photo Reconstruction" panel -> Rotate camera
 - Toggle photo visibility with Ctrl-Down
-- Toggle imported mesh visibility with Ctrl-Up
+- Toggle imported mesh visibility with Ctrl-Up ("mesh1")
 - Save current view orientation with Photo Reconstruction -> Save Orientation
 - Switch to camera according selected saved orientation Shift-Home
