@@ -42,7 +42,7 @@ Put selection center in the middle of viewport
 Hide all cameras except the active one
 
 ### Sort
-Criteria to choose next camera. Keep in mind that 'sorted' camera list is not reversable as it is built for current camera not for scene.
+Criteria to choose next camera. Keep in mind that 'sorted' camera list is not reversable as it is different for each selected camera.
 
 - None: use cameras order within scene data
 - Distance: choose closest camera in selected direction
