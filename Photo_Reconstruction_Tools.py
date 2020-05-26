@@ -39,7 +39,7 @@ def show_camera(scene, cam, pivot = False):
     cam.data.show_name = True
     cam.hide_set(False)
     scene.camera = cam
-    print('Camera: '+cam.name)
+    print('Switching to camera: '+cam.name)
     r3d = False
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
@@ -158,22 +158,6 @@ def is_visible(verts_co, cam):
     return res
 
             
-def camera2camera(target, camera):
-    """
-    cw = camera.matrix_world @ camera.location
-    c = target.perspective_matrix @ Vector(( cw[0], cw[1], cw[2], 1.0))
-    if c.w>0:
-        c.x = c.x/c.w
-        c.y = c.y/c.w
-        c.z = c.z/c.w
-        c.w = 1.0
-    return c
-    """
-#    return world_to_camera_view(bpy.context.scene, target, camera.matrix_world @ camera.location)
-    return world_to_camera_view(bpy.context.scene, target, camera.matrix_world @ camera.location)
-
-
-
 nav_last_dir = 'unknown'
 nav_loop_filter = []    
 
@@ -186,7 +170,8 @@ class Recon_SwitchCamera(bpy.types.Operator):
     direction: bpy.props.EnumProperty(
         items=[('next', "Next camera", ""),
                ('prev', "Prev caamera", ""),
-               ('showcam', "Show caameras", "")
+               ('showcam', "Show caameras", ""),
+               ('refresh', "Refresh", "")
                ],
         name="Direction", 
         default='next',
@@ -196,11 +181,28 @@ class Recon_SwitchCamera(bpy.types.Operator):
     def execute(self, context):        # execute() is called when running the operator.
         global nav_last_dir
         global nav_loop_filter
+
+        def cam_index(aname):
+            for index, item in enumerate(cams):
+                if aname == item.name:
+                    break
+            else:
+                index = -1
+                
+            return index
         
         settings = context.scene.recon_settings
+        print('Direction: {:s}'.format(self.direction))
 
         scene = context.scene
+
+        if self.direction == 'refresh':
+            if scene.camera:
+                show_camera(scene, scene.camera, False)
+            return {'FINISHED'}
+
         cams = [obj for obj in scene.objects if obj.type == 'CAMERA']
+        print('Cams total: {:d}'.format(len(cams)))
 
         if self.direction == 'showcam':
             for item in cams:
@@ -209,12 +211,14 @@ class Recon_SwitchCamera(bpy.types.Operator):
 
 
         # loop filter
-#        print(nav_last_dir)
-#        print(nav_loop_filter)
-        if nav_last_dir == self.direction:
-            cams = list(filter(lambda c: not c.name in nav_loop_filter, cams))
-        else:
-            nav_loop_filter = []
+        if not settings.nav_sort_mode in ['none']:
+            print('Last direction {:s}'.format(nav_last_dir))
+            print(nav_loop_filter)
+            if nav_last_dir == self.direction:
+                cams = list(filter(lambda c: not c.name in nav_loop_filter, cams))
+                print('Cams loop filter: {:d}'.format(len(cams)))
+            else:
+                nav_loop_filter = []
              
         nav_last_dir = self.direction
                             
@@ -225,21 +229,27 @@ class Recon_SwitchCamera(bpy.types.Operator):
                 sel = get_selected_vertices()
             if sel:
                 cams = list(filter(lambda c: is_visible(sel, c) , cams))
+                # restore sensor for current camera
+                if scene.camera:
+                    adjust_render_resolution(scene.camera)
+                print('Cams selected filter: {:d}'.format(len(cams)))
 
 
-        if scene.camera:
+        if scene.camera and 0 <= cam_index(scene.camera.name) < len(cams):
             nav_loop_filter.append(scene.camera.name)
 
             # angle filter
             cam_direction = scene.camera.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
             if settings.nav_filter_angle_enable:            
                 cams = list(filter(lambda c: math.degrees(cam_direction.angle( c.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0)) )) < settings.nav_filter_angle , cams))
-#                print('Filter angle: {:d}'.format(len(cams)))
+                print('Filter angle: {:d}'.format(len(cams)))
+                print('Cams angle filter: {:d}'.format(len(cams)))
 
             # distance filter
             if settings.nav_filter_distance_enable:            
                 cams = list(filter(lambda c: (scene.camera.location - c.location).length < settings.nav_filter_distance , cams))
-#                print('Filter distance: {:d}'.format(len(cams)))
+                print('Filter distance: {:d}'.format(len(cams)))
+                print('Cams distance filter: {:d}'.format(len(cams)))
 
             # sort modes
             if settings.nav_sort_mode == 'distance':                
@@ -260,52 +270,62 @@ class Recon_SwitchCamera(bpy.types.Operator):
 
 
             # find current camera index
-            for index, item in enumerate(cams):
-                item.hide_set
-                if scene.camera.name == item.name:
-                    break
-            else:
-                index = -1
+            index = cam_index(scene.camera.name)
+            print('Current camera index: {:d}'.format(index))
                 
+            if index>=0:
+                if self.direction == 'prev':
+                    index -= 1
+                else:
+                    index += 1
+                    if index >= len(cams):
+                        index = -1
+
+            print('Next camera index: {:d}'.format(index))
+            if 0 <= index < len(cams):
+                new_cam_direction = cams[index].matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
+                print('Angle diff {:f}'.format(math.degrees(cam_direction.angle(new_cam_direction))))
+                print('Distance {:f}'.format( (cams[index].location - scene.camera.location).length ))
+            
         else:
+            # no camera selected or current camera does not fit filters => jump to first matching cam
             index = 0
 
-        if index>=0:
-            if self.direction == 'prev':
-                index -= 1
-            else:
-                index += 1
-                if index >= len(cams):
-                    index = -1
                     
-        if index>=0:
+        if 0 <= index < len(cams):
             view_target = False
             if settings.nav_center_selected:
                 if not sel:
                     sel = get_selected_vertices()
                 if sel:
                     view_target = sum(sel, Vector()) / len(sel)
-                    view_target = bpy.context.active_object.matrix_world @ view_target
+                    #view_target = bpy.context.active_object.matrix_world @ view_target
 
             if settings.nav_hide_other:
                 for obj in scene.objects:
                     if obj.type == 'CAMERA':
                         obj.hide_set(True)
             
-            print('------ Next cam #{:d} ------'.format(index))
-            try:
-                new_cam_direction = cams[index].matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
-                print('Angle diff {:f}'.format(math.degrees(cam_direction.angle(new_cam_direction))))
-                print('Distance {:f}'.format( (cams[index].location - scene.camera.location).length ))
-            except:
-                none
-            
             show_camera(scene, cams[index], view_target)
+
+            for bg_image in cams[index].data.background_images:
+                if bg_image.image and bg_image.image.name == cams[index].name:
+                    bg_image.alpha = settings.nav_alpha
+                    break
 
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
-
+def set_alpha(self, value):
+    self["nav_alpha"] = value
+    camera = bpy.context.scene.camera
+    if camera:
+        for bg_image in camera.data.background_images:
+            if bg_image.image and bg_image.image.name == camera.name:
+                bg_image.alpha = value
+                break
+    
+    
 class Recon_RotateCamera(bpy.types.Operator):
     bl_idname = "reconstruction.rotate_cam"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Rotate camera"         # Display name in the interface.
@@ -565,6 +585,15 @@ class Recon_Settings(bpy.types.PropertyGroup):
         )
 
     # ---- NAV ----
+    nav_alpha: bpy.props.FloatProperty(
+        name='Alpha', 
+        description = 'Photo transparency',
+        default = 0.6,
+        min=0, 
+        max=1,
+        set=set_alpha
+        )
+        
     nav_center_selected: bpy.props.BoolProperty(
         name="Center selected", 
         default=True,
@@ -689,6 +718,7 @@ class Recon_Nav_panel(bpy.types.Panel):
         layout = self.layout
 
         settings = context.scene.recon_settings
+        layout.prop(settings, "nav_alpha")
         layout.prop(settings, "nav_center_selected")
         layout.prop(settings, "nav_hide_other")
         layout.prop(settings, "nav_sort_mode")
@@ -705,6 +735,7 @@ class Recon_Nav_panel(bpy.types.Panel):
         row.operator(Recon_SwitchCamera.bl_idname, text='Prev').direction='prev'
         row.operator(Recon_SwitchCamera.bl_idname, text='Next').direction='next'
         layout.operator(Recon_SwitchCamera.bl_idname, text='Show cameras').direction='showcam'
+        layout.operator(Recon_SwitchCamera.bl_idname, text='Refresh').direction='refresh'
 
 
 class Recon_Orientations_panel(bpy.types.Panel):

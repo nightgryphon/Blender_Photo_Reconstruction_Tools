@@ -32,6 +32,9 @@ At Blender:
 
 Navigate through cameras with Ctrl-Left / Ctrl-Right
 
+### Alpha
+Change photo transparency
+
 ### Center selected
 Put selection center in the middle of viewport
 
@@ -39,7 +42,7 @@ Put selection center in the middle of viewport
 Hide all cameras except the active one
 
 ### Sort
-Criteria to choose next camera
+Criteria to choose next camera. Keep in mind that 'sorted' camera list is not reversable as it is built for current camera not for scene.
 
 - None: use cameras order within scene data
 - Distance: choose closest camera in selected direction
@@ -49,9 +52,13 @@ Criteria to choose next camera
 Distance: filter out too large jumps between cameras while navigating  
 Angle: filter cameras with view direction too different from current camera  
 
+## Orientation
+Change camera orientation with "Photo Reconstruction" panel -> Rotate camera  
+If your photo set contain both vertical and horisontal captured photos it can be convenient to rotate such cameras to preserve general scene orientation on screen.  
+This effect is achieved by rotating both camera and image. But this also require to adjust render area for such rotated cameras. If camera sensor/image does not fit scene try to use "Navigation panel"->"Refresh" button 
+
 ## Other tools:
 
-- Change camera orientation with "Photo Reconstruction" panel -> Rotate camera
 - Toggle photo visibility with Ctrl-Down
 - Toggle imported mesh visibility with Ctrl-Up ("mesh1")
 - Save current view orientation with Photo Reconstruction -> Save Orientation
