@@ -333,6 +333,19 @@ def update_alpha(self, context):
     
     
 # -----------------------------------------------------------------
+def rotate_cam(camera, angle):
+    if camera:
+        bg = get_bg_image(camera)
+        if bg:
+            bg.rotation -= math.radians(angle)
+            camera.rotation_mode = 'AXIS_ANGLE' # adjust euler rotation center to camera position for ZXY mode
+#            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            camera.rotation_mode = 'ZXY'
+            camera.rotation_euler[2] += math.radians(angle)
+            return True
+    return False
+
+
 class Recon_RotateCamera(bpy.types.Operator):
     bl_idname = "reconstruction.rotate_cam"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Rotate camera"         # Display name in the interface.
@@ -358,23 +371,15 @@ class Recon_RotateCamera(bpy.types.Operator):
         scene = context.scene
         camera = scene.camera
 
-        if camera:
-            bg = get_bg_image(camera)
-            if bg:
-                bg.rotation -= math.radians(self.angle)
-                camera.rotation_mode = 'AXIS_ANGLE' # adjust euler rotation center to camera position for ZXY mode
-#                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                camera.rotation_mode = 'ZXY'
-                camera.rotation_euler[2] += math.radians(self.angle)
-                
-                #fit sensor
-                if self.rotate_hack:
-                    if ('rotate_hack' in camera.data) and (camera.data['rotate_hack']):
-                        camera.data['rotate_hack'] = 0
-                    else:
-                        camera.data['rotate_hack'] = 1
+        if rotate_cam(camera, self.angle):
+            #fit sensor
+            if self.rotate_hack:
+                if ('rotate_hack' in camera.data) and (camera.data['rotate_hack']):
+                    camera.data['rotate_hack'] = 0
+                else:
+                    camera.data['rotate_hack'] = 1
 
-                adjust_render_resolution(camera)
+            adjust_render_resolution(camera)
 
 
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
@@ -629,10 +634,36 @@ class Recon_LoadCameras(bpy.types.Operator):
                     print('Setting up scene camera {:s}'.format(name))
                     cam.matrix_world = self.photoscan2cam(world_r, world_t, m_cam)
                     
+#                    print(camera.attrib['sensor_id'])
+#                    print(camera.find('orientation').text)
                     s = sensors[camera.attrib['sensor_id']]
                     cam.data.lens_unit = 'FOV'
                     cam.data.angle = 2*math.atan(max(s[0], s[1])/2/s[2])
                     cam.data['f'] = s[2]
+
+                    cam.data['rotate_hack'] = 0
+                    bg = get_bg_image(cam)
+                    if bg:
+                        bg.rotation = 0
+
+                    orientation = camera.find('orientation')
+                    if orientation != None:
+                        print('Orientation {:s}'.format(orientation.text))
+                        # '1' - original
+                        if orientation.text == '3':
+                            rotate_cam(cam, 180);
+                            cam.data['rotate_hack'] = 0
+
+                        if orientation.text == '6':
+                            rotate_cam(cam, 90);
+                            cam.data['rotate_hack'] = 1
+
+                        if orientation.text == '8':
+                            rotate_cam(cam, -90);
+                            cam.data['rotate_hack'] = 1
+
+                    if cam == bpy.context.scene.camera:
+                        adjust_render_resolution(cam)
 
 
         print('Done loading.')
