@@ -14,15 +14,17 @@ bl_info = {
 import bpy
 import math
 import mathutils
-from mathutils import Vector
+from mathutils import Vector, Matrix
 import bpy_extras
 from bpy_extras.object_utils import world_to_camera_view
 import os
+from xml.etree import ElementTree as ET
+import numpy as np
 
 
 addon_keymaps = []
 
-def find_bg(camera):
+def get_bg_image(camera):
     bg = None
     for bg_image in camera.data.background_images:
         if bg_image.image:
@@ -30,6 +32,7 @@ def find_bg(camera):
                 bg = bg_image
                 break
     return bg
+
     
     
 def show_camera(scene, cam, pivot = False):
@@ -84,11 +87,11 @@ def rotate_2d(xy, radians):
 def adjust_render_resolution(cam):        
     try:
         f = cam.data['f']
-        bg = find_bg(cam)
+        bg = get_bg_image(cam)
         if bg:
             # TODO adjust camera to fit rotated image
             # image first fit to camera (bg_image.frame_method) than rotate
-            # how to adjust camera to fit _rotated_ image???
+            # how to adjust render resolution to fit _rotated_ image which size depend on render resolution???
             # how to calc FOV for such camera????
             #
             """
@@ -158,6 +161,7 @@ def is_visible(verts_co, cam):
     return res
 
             
+# -----------------------------------------------------------------
 nav_last_dir = 'unknown'
 nav_loop_filter = []    
 
@@ -308,24 +312,27 @@ class Recon_SwitchCamera(bpy.types.Operator):
             
             show_camera(scene, cams[index], view_target)
 
-            for bg_image in cams[index].data.background_images:
-                if bg_image.image and bg_image.image.name == cams[index].name:
-                    bg_image.alpha = settings.nav_alpha
-                    break
+            bg_image = get_bg_image(cams[index])
+            if bg_image:
+                bg_image.alpha = settings.nav_alpha
 
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
-def set_alpha(self, value):
-    self["nav_alpha"] = value
+def update_alpha(self, context):
+#    print(self["nav_alpha"])
+#    settings = bpy.context.scene.recon_settings
+#    settings["nav_alpha"] = value
+    
     camera = bpy.context.scene.camera
     if camera:
-        for bg_image in camera.data.background_images:
-            if bg_image.image and bg_image.image.name == camera.name:
-                bg_image.alpha = value
-                break
+        bg_image = get_bg_image(camera)
+        if bg_image:
+            settings = bpy.context.scene.recon_settings
+            bg_image.alpha = settings.nav_alpha
     
     
+# -----------------------------------------------------------------
 class Recon_RotateCamera(bpy.types.Operator):
     bl_idname = "reconstruction.rotate_cam"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Rotate camera"         # Display name in the interface.
@@ -352,17 +359,7 @@ class Recon_RotateCamera(bpy.types.Operator):
         camera = scene.camera
 
         if camera:
-            background_images = camera.data.background_images
-
-#            bg = None
-#            for bg_image in background_images:
-#                if bg_image.image:
-#                    if bg_image.image.name == camera.name:
-#                        # image exists
-#                        bg = bg_image
-#                        break
-            bg = find_bg(camera)
-    
+            bg = get_bg_image(camera)
             if bg:
                 bg.rotation -= math.radians(self.angle)
                 camera.rotation_mode = 'AXIS_ANGLE' # adjust euler rotation center to camera position for ZXY mode
@@ -382,6 +379,8 @@ class Recon_RotateCamera(bpy.types.Operator):
 
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
+
+# -----------------------------------------------------------------
 class Recon_TogglePhoto(bpy.types.Operator):
     bl_idname = "reconstruction.toggle_photo"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Toggle Photo"         # Display name in the interface.
@@ -421,6 +420,7 @@ class Recon_ToggleMesh(bpy.types.Operator):
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
+# -----------------------------------------------------------------
 class Recon_SaveOrientation(bpy.types.Operator):
     bl_idname = "reconstruction.save_orientation"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Save camera orientation"         # Display name in the interface.
@@ -479,7 +479,7 @@ class Recon_SwitchToOrientation(bpy.types.Operator):
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
-
+# -----------------------------------------------------------------
 class Recon_LoadImages(bpy.types.Operator):
     bl_idname = "reconstruction.load_image"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Load images for selected cameras"         # Display name in the interface.
@@ -492,43 +492,46 @@ class Recon_LoadImages(bpy.types.Operator):
     def execute(self, context):        # execute() is called when running the operator.
         print('Loading...')
 
-        settings = context.scene.recon_settings
-        camera_angle = 2*math.atan(1280/2/1035.23)
+        settings = bpy.context.scene.recon_settings
+#        camera_angle = 2*math.atan(1280/2/1035.23)
 
-        sel_objs = [obj for obj in bpy.context.selected_objects if obj.type == 'CAMERA']
+        if settings.image_selected_only:
+            sel_objs = [obj for obj in bpy.context.selected_objects if obj.type == 'CAMERA']
+            if settings.image_use_current and not bpy.context.scene.caamera in sel_objs:
+                sel_objs.append(bpy.context.scene.caamera)
+        else:
+            sel_objs = [obj for obj in bpy.context.scene.objects if obj.type == 'CAMERA']
+            
         for camera in sel_objs:
-            background_images = camera.data.background_images
-
-            img_path = os.path.join(settings.image_path, camera.name+settings.image_ext)
-            print("Camera image: "+img_path)
+            print('Camera {:s} -----------'.format(camera.name))
             try:
+                img_path = os.path.join(settings.image_path, camera.name+settings.image_ext)
+                print('    Image: {:s}'.format(img_path))
+
                 img = bpy.data.images.load(img_path)
                 img.name = camera.name
                 img.pack()
 
                 print('    {:d}x{:d}'.format(img.size[0], img.size[1]))
 
-                bg = None
                 bg_angle = 0
-                for bg_image in background_images:
-                    if bg_image.image:
-                        if bg_image.image.name == camera.name:
-                            # image exists
-                            bg_angle = bg.rotation
-                            if settings.replace_existing:
-                                print('Removing old image')
-                                bpy.data.images.remove(bg_image.image)
-                                bg_image.image = None
-                            bg = bg_image
-                            break
+                bg = get_bg_image(camera)
     
+                if bg:
+                    # image exists
+                    bg_angle = bg.rotation
+                    if settings.replace_existing:
+                        print('    Removing old image')
+                        bpy.data.images.remove(bg.image)
+                        bg.image = None
+                    
                 if not bg:
-                    bg = background_images.new()
+                    bg = camera.data.background_images.new()
 
                 if bg.image:
                     break
                 
-                print('Attaching new image')
+                print('    Attaching new image')
                 bg.show_background_image = True
                 if hasattr(bg, 'view_axis'):
                     # only show the background image when looking through the camera (< 2.8)
@@ -537,22 +540,107 @@ class Recon_LoadImages(bpy.types.Operator):
                 bg.image = img
                 bg.display_depth = 'FRONT'
                 bg.frame_method = 'CROP'
-                bg.alpha = 0.6
+                bg.alpha = settings.nav_alpha
                 bg.rotation = bg_angle
         
                 camera.data.lens_unit = 'FOV'
-                camera.data.angle = 2*math.atan(img.size[0]/2/settings.camera_f)
-                camera.data['f'] = settings.camera_f
+                f = settings.image_f
+                if 'f' in camera.data and not settings.image_replace_f:
+                    f = camera.data['f']
+                camera.data.angle = 2*math.atan(max(img.size)/2/f) # img.size[0]
+                camera.data['f'] = f
 
                 camera.data.show_passepartout = False
                 camera.data.show_background_images = True
             except:
-                print("Failed!")
+                print("    Failed!")
 
         print('Done loading.')
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
+#--------------------------
+class Recon_LoadCameras(bpy.types.Operator):
+    bl_idname = "reconstruction.load_camera"        # Unique identifier for buttons and menu items to reference.
+    bl_label = "Load cameras from XML"         # Display name in the interface.
+    bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
+
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+
+                
+    def photoscan2cam(self, world_r, world_t, m_cam):
+        m = world_r.to_4x4() @ m_cam
+        m.translation += world_t
+        return m @ Matrix( ( (1,0,0,0),(0,-1,0,0),(0,0,-1,0),(0,0,0,1) ) )
+
+
+    def execute(self, context):        # execute() is called when running the operator.
+        print('Loading...')
+
+        settings = context.scene.recon_settings
+
+        sel_cams = [obj for obj in bpy.context.selected_objects if obj.type == 'CAMERA']
+
+        tree = ET.parse(bpy.path.abspath(settings.cam_file))            
+        chunks = tree.findall('chunk')
+        for chunk in chunks:
+            print('Chunk {:s}'.format(chunk.attrib['label']))
+            transform = chunk.find('transform')
+            world_t = Vector(np.array(transform.find('translation').text.split(' ')).astype(np.float))
+            print(world_t)
+            world_r = Matrix(np.array(transform.find('rotation').text.split(' ')).astype(np.float).reshape((3,3)))
+            print(world_r)
+            
+            s = chunk.find('sensors').findall('sensor')
+            sensors={}
+            for sensor in s:
+                resolution = sensor.find('resolution') 
+#                print(sensor.find('calibration').attrib['type'])
+                sensors[sensor.attrib['id']] = (
+                    float(resolution.attrib['width']),
+                    float(resolution.attrib['height']),
+                    float(sensor.find('calibration').find('f').text),
+                    )
+            print(sensors)
+
+            cameras = chunk.find('cameras').findall('camera')
+            for camera in cameras:
+                name = camera.attrib['label']
+                m_cam = Matrix(np.array(camera.find('transform').text.split(' ')).astype(np.float).reshape((4,4)))
+#                print('Camera {:s}'.format(name))
+#                print(m_cam)
+                
+                cam = False
+                if name in bpy.context.scene.objects.keys():
+                    if settings.cam_update:
+                        cam = bpy.context.scene.objects[name]
+                        if not settings.cam_use_current or cam != bpy.context.scene.camera:
+                            if settings.cam_selected_only and not cam in bpy.context.selected_objects:
+                                cam = False
+                else:
+                    if settings.cam_append:
+                        print('Creating new scene camera')
+                        cam_cam = bpy.data.cameras.new(name)
+                        cam = bpy.data.objects.new(name, cam_cam)
+                        bpy.context.scene.collection.objects.link(cam)
+                        
+                if cam:
+                    print('Setting up scene camera {:s}'.format(name))
+                    cam.matrix_world = self.photoscan2cam(world_r, world_t, m_cam)
+                    
+                    s = sensors[camera.attrib['sensor_id']]
+                    cam.data.lens_unit = 'FOV'
+                    cam.data.angle = 2*math.atan(max(s[0], s[1])/2/s[2])
+                    cam.data['f'] = s[2]
+
+
+        print('Done loading.')
+        return {'FINISHED'}            # Lets Blender know the operator finished successfully.
+
+
+
+#--------------------------
 class Recon_Settings(bpy.types.PropertyGroup):
     # ----- LOAD IMG -------
     image_path: bpy.props.StringProperty(
@@ -570,7 +658,7 @@ class Recon_Settings(bpy.types.PropertyGroup):
         maxlen = 32
         )
 
-    camera_f: bpy.props.FloatProperty(
+    image_f: bpy.props.FloatProperty(
         name='Focal length (px)', 
         description = 'Focal length in pixels',
         default = 1024,
@@ -578,12 +666,30 @@ class Recon_Settings(bpy.types.PropertyGroup):
         soft_max=2048
         )
         
-    replace_existing: bpy.props.BoolProperty(
+    image_replace_f: bpy.props.BoolProperty(
+        name='Overwrite F', 
+        description = 'Replace stored focal length',
+        default = False
+        )
+
+    image_replace_existing: bpy.props.BoolProperty(
         name='Reload images', 
         description = 'Replace already loaded images',
         default = True
         )
 
+    image_selected_only: bpy.props.BoolProperty(
+        name="Selected only", 
+        description = 'Update only selected cameras',
+        default=False,
+        )
+        
+    image_use_current: bpy.props.BoolProperty(
+        name="Include current", 
+        description = 'Include current camera',
+        default=True,
+        )
+        
     # ---- NAV ----
     nav_alpha: bpy.props.FloatProperty(
         name='Alpha', 
@@ -591,7 +697,8 @@ class Recon_Settings(bpy.types.PropertyGroup):
         default = 0.6,
         min=0, 
         max=1,
-        set=set_alpha
+#        set=set_alpha
+        update=update_alpha
         )
         
     nav_center_selected: bpy.props.BoolProperty(
@@ -660,7 +767,60 @@ class Recon_Settings(bpy.types.PropertyGroup):
         default='none',
         )
         
+    # ----- LOAD CAM -------
+    cam_file: bpy.props.StringProperty(
+        name = 'File',
+        description = 'Cameras XML file',
+#        default = os.path.dirname(bpy.data.filepath), 
+        maxlen = 1024, 
+        subtype = 'FILE_PATH'
+        )
 
+    cam_append: bpy.props.BoolProperty(
+        name="Append missing", 
+        description = 'Append missing cameras',
+        default=True,
+        )
+        
+    cam_update: bpy.props.BoolProperty(
+        name="Update existing", 
+        description = 'Update existing camera positions',
+        default=True,
+        )
+        
+    cam_selected_only: bpy.props.BoolProperty(
+        name="Selected only", 
+        description = 'Update only selected cameras',
+        default=True,
+        )
+        
+    cam_use_current: bpy.props.BoolProperty(
+        name="Include current", 
+        description = 'Include current camera',
+        default=True,
+        )
+        
+
+class Recon_LoadCameras_panel(bpy.types.Panel):
+    bl_label = "Import Cameras"
+    bl_category = "Photo Reconstruction"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+
+    def draw(self, context):
+        layout = self.layout
+#        row = layout.row()
+
+        settings = context.scene.recon_settings
+        layout.prop(settings, "cam_file")
+        layout.prop(settings, "cam_append")
+        layout.prop(settings, "cam_update")
+        layout.prop(settings, "cam_selected_only")
+        layout.prop(settings, "cam_use_current")
+
+        layout.separator()
+
+        layout.operator('reconstruction.load_camera', text = 'Load cameras')
 
 
 class Recon_LoadImages_panel(bpy.types.Panel):
@@ -677,9 +837,13 @@ class Recon_LoadImages_panel(bpy.types.Panel):
         layout.prop(settings, "image_path")
         layout.prop(settings, "image_ext")
 
+        layout.prop(settings, "image_replace_existing")
+        layout.prop(settings, "image_selected_only")
+        layout.prop(settings, "image_use_current")
+
         layout.separator()
-        layout.prop(settings, "camera_f")
-        layout.prop(settings, "replace_existing")
+        layout.prop(settings, "image_replace_f")
+        layout.prop(settings, "image_f")
 
         layout.separator()
         layout.operator('reconstruction.load_image', text = 'Load images')
@@ -776,9 +940,10 @@ def draw_menu(self, context):
 
 classes = ( Recon_SwitchCamera, Recon_TogglePhoto, Recon_ToggleMesh,
             Recon_SaveOrientation, Recon_SwitchToOrientation,
+            Recon_Settings, 
             Recon_Nav_panel, Recon_Orientations_panel, 
-            Recon_LoadImages,
-            Recon_Settings, Recon_LoadImages_panel, 
+            Recon_LoadCameras, Recon_LoadCameras_panel,
+            Recon_LoadImages, Recon_LoadImages_panel, 
             Recon_RotateCamera, Recon_RotateCam_panel, 
             Recon_Menu)
 

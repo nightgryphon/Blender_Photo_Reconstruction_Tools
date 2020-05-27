@@ -7,25 +7,40 @@ This plugin provide tools to:
 - some tools to simplify reconstruction process
 
 
+![Cover](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/doc/Cover.png)
 
 ## Import cameras from AgiSoft Photo Scan to Blender:
 
 ![Imported camera example](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/doc/Screen1024.png)
 
+There is two camera export options available in Photo Scan:
+
+- Export cameras as .xml
+- Export .DAE model with included cameras
+
+An .xml file contain all information regarding cameras including focal length and image orientation. Using .xml file you can update existing cameras.  
+The .dae model contains only camera position/orientation so you has to provide focal length manually.  
+Both methods work fine but .xml requre less manual setup  
+
+### Workflow
 At Photo Scan:
 
-- export model to file supporting cameras export like .DAE
-- export images: Export -> Undistort Photos, filename template {camera}.{fileext}
-- get adjusted camera focal length: Tools -> Camera Calibration -> "Adjusted" tab
+- export model to .XML (File->Export->Export cameras) or .DAE (File->Export->Export model)
+- if using .DAE: get adjusted camera focal length: Tools -> Camera Calibration -> "Adjusted" tab  
+
+- export undistorted images: Export -> Undistort Photos, filename template {camera}.{fileext}
 
 At Blender: 
 
-- import model containig cameras
-- select cameras you wish to setup
-- open "Photo Reconstruction" panel at the rigth side of 3D view (can be folded under [<] thing)
-- in "Load Images" section provide folder with saved undistorted photos, focal length for selected cameras
+- for .XML: "Photo Reconstruction" panel -> Import camera. Choose .xml file, press "Load cameras"
+- for .DAE: import model containig cameras (Axis orientations: Y forward, Z up)  
+
+- At "Photo Reconstruction" panel -> "Load Images" select folder with saved undistorted photos
+- For .DAE: set focal length field
+- select cameras you wish to setup images or clear "Selected only" box
 - if you wish to force cameras to update check "Reload images" otherwise only missing images will be loaded
 
+"Photo Reconstruction" panel is located at the rigth side of 3D view (can be folded under [<] thing)  
 
 ## Navigation
 ![Navigation panel](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/doc/NavPanel.png)
