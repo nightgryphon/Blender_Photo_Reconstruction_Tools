@@ -2,7 +2,7 @@
 
 This plugin provide tools to:
 
-- setup images and adjust cameras imported from photogrammetry software like AgiSoft Photo Scan
+- import and setup cameras + photos from photogrammetry software AgiSoft Photo Scan
 - easy navigate between all imported cameras using hot keys and automatically filtering cameras for current selection only
 - some tools to simplify reconstruction process
 
@@ -37,7 +37,7 @@ At Blender:
 
 - At "Photo Reconstruction" panel -> "Load Images" select folder with saved undistorted photos
 - For .DAE: set focal length field
-- select cameras you wish to setup images or clear "Selected only" box
+- select cameras you wish to load images for or clear "Selected only" box to use all cameras
 - if you wish to force cameras to update check "Reload images" otherwise only missing images will be loaded
 
 "Photo Reconstruction" panel is located at the rigth side of 3D view (can be folded under [<] thing)  
