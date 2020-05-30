@@ -169,7 +169,7 @@ class Recon_SwitchCamera(bpy.types.Operator):
     bl_idname = "reconstruction.switch_cam"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Change Camera"         # Display name in the interface.
 #    bl_options = {'REGISTER'}
-    bl_options = {'REGISTER', 'UNDO'}
+#    bl_options = {'REGISTER', 'UNDO'}
 
     direction: bpy.props.EnumProperty(
         items=[('next', "Next camera", ""),
@@ -671,6 +671,159 @@ class Recon_LoadCameras(bpy.types.Operator):
 
 
 
+# -----------------------------------------------------------------
+#class Recon_ExportList_item(PropertyGroup):
+#    idx: IntProperty()
+    
+class Recon_Export(bpy.types.Operator):
+    bl_idname = "reconstruction.export"        # Unique identifier for buttons and menu items to reference.
+    bl_label = "Quick export"         # Display name in the interface.
+#    bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
+
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+
+
+    cmd: bpy.props.EnumProperty(
+        items=[('add', "Add objects", ""),
+               ('del', "Delete object", ""),
+               ('export', "Export", "")
+               ],
+        name="Command", 
+        default='export',
+        options={'HIDDEN'} 
+        )
+
+    def do_add(self, context):
+        settings = context.scene.recon_settings
+        list = settings.export_objects
+        names = [itm.name for itm in list]
+        
+        sel_objs = [obj for obj in bpy.context.selected_objects if obj.type == 'MESH']
+
+        if len(sel_objs) == 0:
+            sel_objs = [bpy.context.view_layer.objects.active]
+
+        for obj in sel_objs:
+            if not obj.name in names:
+                itm = list.add()
+                itm.name = obj.name
+
+
+    def do_del(self, context):
+        settings = context.scene.recon_settings
+        list = settings.export_objects
+        
+        try:
+            list.remove(settings.export_list_idx)
+            if settings.export_list_idx > len(list):
+                settings.export_list_idx = len(list)-1
+        except:
+            pass
+
+
+    def do_export(self, context):
+        global export_list_idx
+        settings = context.scene.recon_settings
+        list = settings.export_objects
+        
+        # Save selection
+        obj_active = bpy.context.view_layer.objects.active
+        selection = bpy.context.selected_objects
+        mode = obj_active.mode
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.select_all(action='DESELECT')
+
+        for itm in list:
+            obj = context.scene.objects.get(itm.name, None)
+            if obj:
+                obj.select_set(True)
+#            print(itm.name)
+        try:
+            bpy.ops.export_scene.obj(
+                filepath = bpy.path.abspath(settings.export_file),
+                check_existing = True,
+                filter_glob="*.obj;*.mtl", 
+                use_selection=True, 
+                use_animation=False, 
+                use_mesh_modifiers=True, 
+                use_edges=True, 
+                use_smooth_groups=False, 
+                use_smooth_groups_bitflags=False, 
+                use_normals=True, 
+                use_uvs=False, 
+                use_materials=False, 
+                use_triangles=True, 
+                use_nurbs=False, 
+                use_vertex_groups=False, 
+                use_blen_objects=True, 
+                group_by_object=False, 
+                group_by_material=False, 
+                keep_vertex_order=False, 
+                global_scale=1.0, 
+                path_mode='AUTO', 
+                axis_forward='Y', 
+                axis_up='Z'
+                )
+
+            self.report({"INFO"}, 'Export done: {:s}'.format(settings.export_file) )
+        except Exception as e:
+            if hasattr(e, 'message'):
+                self.report({"ERROR"}, e.message)
+            else:
+                self.report({"ERROR"}, str(e) )
+
+        # Restore selection
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in selection:
+            obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj_active
+        bpy.ops.object.mode_set(mode=mode)
+
+
+
+    def execute(self, context):        # execute() is called when running the operator.
+        # dispatch command
+        func = getattr(self, 'do_'+self.cmd)
+        func(context)
+
+        return {'FINISHED'}            # Lets Blender know the operator finished successfully.
+
+
+
+class Recon_List_items(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        layout.label(text=item.name)
+
+    def invoke(self, context, event):
+        pass   
+    
+class Recon_Export_panel(bpy.types.Panel):
+    bl_label = "Quick Export"
+    bl_category = "Photo Reconstruction"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+
+    def draw(self, context):
+        layout = self.layout
+#        row = layout.row()
+
+        settings = context.scene.recon_settings
+        layout.prop(settings, "export_file")
+
+        layout.separator()
+
+        row = layout.row()
+        row.template_list("Recon_List_items", "", settings, "export_objects", settings, "export_list_idx")
+
+        col = row.column(align=True)
+        col.operator("reconstruction.export", icon='ADD',  text="").cmd = 'add'
+        col.operator("reconstruction.export", icon='REMOVE', text="").cmd = 'del'
+        
+        layout.operator('reconstruction.export', text = 'Export').cmd='export'
+
+
 #--------------------------
 class Recon_Settings(bpy.types.PropertyGroup):
     # ----- LOAD IMG -------
@@ -831,6 +984,20 @@ class Recon_Settings(bpy.types.PropertyGroup):
         default=True,
         )
         
+    # ----- EXPORT -------
+    export_file: bpy.props.StringProperty(
+        name = 'File',
+        description = 'Export to',
+        maxlen = 1024, 
+        subtype = 'FILE_PATH'
+        )
+
+    export_objects: bpy.props.CollectionProperty(type=bpy.types.PropertyGroup) #Recon_ExportList_item)
+    export_list_idx: bpy.props.IntProperty(
+#        default = -1
+        )
+
+    
 
 class Recon_LoadCameras_panel(bpy.types.Panel):
     bl_label = "Import Cameras"
@@ -976,6 +1143,7 @@ classes = ( Recon_SwitchCamera, Recon_TogglePhoto, Recon_ToggleMesh,
             Recon_LoadCameras, Recon_LoadCameras_panel,
             Recon_LoadImages, Recon_LoadImages_panel, 
             Recon_RotateCamera, Recon_RotateCam_panel, 
+            Recon_Export, Recon_List_items, Recon_Export_panel,
             Recon_Menu)
 
 

@@ -25,7 +25,7 @@ Both methods work fine but .xml requre less manual setup
 ### Workflow
 At Photo Scan:
 
-- export model to .XML (File->Export->Export cameras) or .DAE (File->Export->Export model)
+- export cameras to .XML (File->Export->Export cameras) or model to .DAE (File->Export->Export model)
 - if using .DAE: get adjusted camera focal length: Tools -> Camera Calibration -> "Adjusted" tab  
 
 - export undistorted images: Export -> Undistort Photos, filename template {camera}.{fileext}
@@ -71,6 +71,14 @@ Angle: filter cameras with view direction too different from current camera
 Change camera orientation with "Photo Reconstruction" panel -> Rotate camera  
 If your photo set contain both vertical and horisontal captured photos it can be convenient to rotate such cameras to preserve general scene orientation on screen.  
 This effect is achieved by rotating both camera and image. But this also require to adjust render area for such rotated cameras. If camera sensor/image does not fit scene try to use "Navigation panel"->"Refresh" button 
+
+## Quick Export
+Allow one click export objects from export list.  
+Silently overwrite selected file by exporting listed meshes in OBJ format. File format is tuned to import back in to photogrammetry software to apply textures.
+
+- Axis: Z up, Y forward
+- No materials and UV
+- Apply modifiers, write edges, triangulate faces
 
 ## Other tools:
 
