@@ -39,8 +39,10 @@ At Blender:
 - For .DAE: set focal length field
 - select cameras you wish to load images for or clear "Selected only" box to use all cameras
 - if you wish to force cameras to update check "Reload images" otherwise only missing images will be loaded
+- click "Load Cameras" button
 
-"Photo Reconstruction" panel is located at the rigth side of 3D view (can be folded under [<] thing)  
+
+** "Photo Reconstruction" panel is located at the rigth side of 3D view (can be folded under [<] thing)  
 
 ## Navigation
 ![Navigation panel](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/doc/NavPanel.png)

@@ -612,58 +612,60 @@ class Recon_LoadCameras(bpy.types.Operator):
             cameras = chunk.find('cameras').findall('camera')
             for camera in cameras:
                 name = camera.attrib['label']
-                m_cam = Matrix(np.array(camera.find('transform').text.split(' ')).astype(np.float).reshape((4,4)))
-#                print('Camera {:s}'.format(name))
-#                print(m_cam)
+                transform = camera.find('transform')
+                if transform != None:
+                m_cam = Matrix(np.array(transform.text.split(' ')).astype(np.float).reshape((4,4)))
+#                   print('Camera {:s}'.format(name))
+#                   print(m_cam)
                 
-                cam = False
-                if name in bpy.context.scene.objects.keys():
-                    if settings.cam_update:
-                        cam = bpy.context.scene.objects[name]
-                        if not settings.cam_use_current or cam != bpy.context.scene.camera:
-                            if settings.cam_selected_only and not cam in bpy.context.selected_objects:
-                                cam = False
-                else:
-                    if settings.cam_append:
-                        print('Creating new scene camera')
-                        cam_cam = bpy.data.cameras.new(name)
-                        cam = bpy.data.objects.new(name, cam_cam)
-                        bpy.context.scene.collection.objects.link(cam)
+                    cam = False
+                    if name in bpy.context.scene.objects.keys():
+                        if settings.cam_update:
+                            cam = bpy.context.scene.objects[name]
+                            if not settings.cam_use_current or cam != bpy.context.scene.camera:
+                                if settings.cam_selected_only and not cam in bpy.context.selected_objects:
+                                    cam = False
+                    else:
+                        if settings.cam_append:
+                            print('Creating new scene camera')
+                            cam_cam = bpy.data.cameras.new(name)
+                            cam = bpy.data.objects.new(name, cam_cam)
+                            bpy.context.scene.collection.objects.link(cam)
                         
-                if cam:
-                    print('Setting up scene camera {:s}'.format(name))
-                    cam.matrix_world = self.photoscan2cam(world_r, world_t, m_cam)
+                    if cam:
+                        print('Setting up scene camera {:s}'.format(name))
+                        cam.matrix_world = self.photoscan2cam(world_r, world_t, m_cam)
                     
-#                    print(camera.attrib['sensor_id'])
-#                    print(camera.find('orientation').text)
-                    s = sensors[camera.attrib['sensor_id']]
-                    cam.data.lens_unit = 'FOV'
-                    cam.data.angle = 2*math.atan(max(s[0], s[1])/2/s[2])
-                    cam.data['f'] = s[2]
+#                        print(camera.attrib['sensor_id'])
+#                        print(camera.find('orientation').text)
+                        s = sensors[camera.attrib['sensor_id']]
+                        cam.data.lens_unit = 'FOV'
+                        cam.data.angle = 2*math.atan(max(s[0], s[1])/2/s[2])
+                        cam.data['f'] = s[2]
 
-                    cam.data['rotate_hack'] = 0
-                    bg = get_bg_image(cam)
-                    if bg:
-                        bg.rotation = 0
+                        cam.data['rotate_hack'] = 0
+                        bg = get_bg_image(cam)
+                        if bg:
+                            bg.rotation = 0
 
-                    orientation = camera.find('orientation')
-                    if orientation != None:
-                        print('Orientation {:s}'.format(orientation.text))
-                        # '1' - original
-                        if orientation.text == '3':
-                            rotate_cam(cam, 180);
-                            cam.data['rotate_hack'] = 0
+                        orientation = camera.find('orientation')
+                        if orientation != None:
+                            print('Orientation {:s}'.format(orientation.text))
+                            # '1' - original
+                            if orientation.text == '3':
+                                rotate_cam(cam, 180);
+                                cam.data['rotate_hack'] = 0
 
-                        if orientation.text == '6':
-                            rotate_cam(cam, 90);
-                            cam.data['rotate_hack'] = 1
+                            if orientation.text == '6':
+                                rotate_cam(cam, 90);
+                                cam.data['rotate_hack'] = 1
 
-                        if orientation.text == '8':
-                            rotate_cam(cam, -90);
-                            cam.data['rotate_hack'] = 1
+                            if orientation.text == '8':
+                                rotate_cam(cam, -90);
+                                cam.data['rotate_hack'] = 1
 
-                    if cam == bpy.context.scene.camera:
-                        adjust_render_resolution(cam)
+                        if cam == bpy.context.scene.camera:
+                            adjust_render_resolution(cam)
 
 
         print('Done loading.')
