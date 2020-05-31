@@ -614,7 +614,7 @@ class Recon_LoadCameras(bpy.types.Operator):
                 name = camera.attrib['label']
                 transform = camera.find('transform')
                 if transform != None:
-                m_cam = Matrix(np.array(transform.text.split(' ')).astype(np.float).reshape((4,4)))
+                    m_cam = Matrix(np.array(transform.text.split(' ')).astype(np.float).reshape((4,4)))
 #                   print('Camera {:s}'.format(name))
 #                   print(m_cam)
                 
