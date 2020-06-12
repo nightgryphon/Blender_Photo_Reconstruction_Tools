@@ -36,6 +36,7 @@ def get_bg_image(camera):
 
     
     
+# -----------------------------------------------------------------
 def show_camera(scene, cam, pivot = False):
     cam.data.show_background_images = True
     cam.data.show_limits = False
@@ -77,6 +78,7 @@ def show_camera(scene, cam, pivot = False):
             r3d.view_camera_offset = [ c.x/zoom, c.y/zoom ]
 
 
+# -----------------------------------------------------------------
 def rotate_2d(xy, radians):
     """rotate a point around the origin (0, 0)."""
     x, y = xy
@@ -85,6 +87,7 @@ def rotate_2d(xy, radians):
 
     return xx, yy
 
+# -----------------------------------------------------------------
 def adjust_render_resolution(cam):        
     try:
         f = cam.data['f']
@@ -125,6 +128,7 @@ def adjust_render_resolution(cam):
     return False
         
 
+# -----------------------------------------------------------------
 def get_selected_vertices():
     if bpy.context.active_object and bpy.context.active_object.type == 'MESH':
         obj = bpy.context.active_object
@@ -142,6 +146,7 @@ def get_selected_vertices():
         return []
 
 
+# -----------------------------------------------------------------
 def is_visible(verts_co, cam):
     scene = bpy.context.scene
     cs, ce = cam.data.clip_start, cam.data.clip_end
@@ -320,6 +325,7 @@ class Recon_SwitchCamera(bpy.types.Operator):
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
+# -----------------------------------------------------------------
 def update_alpha(self, context):
 #    print(self["nav_alpha"])
 #    settings = bpy.context.scene.recon_settings
@@ -332,7 +338,7 @@ def update_alpha(self, context):
             settings = bpy.context.scene.recon_settings
             bg_image.alpha = settings.nav_alpha
     
-    
+
 # -----------------------------------------------------------------
 def rotate_cam(camera, angle):
     if camera:
@@ -347,6 +353,7 @@ def rotate_cam(camera, angle):
     return False
 
 
+# -----------------------------------------------------------------
 class Recon_RotateCamera(bpy.types.Operator):
     bl_idname = "reconstruction.rotate_cam"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Rotate camera"         # Display name in the interface.
@@ -386,6 +393,7 @@ class Recon_RotateCamera(bpy.types.Operator):
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
+
 # -----------------------------------------------------------------
 class Recon_TogglePhoto(bpy.types.Operator):
     bl_idname = "reconstruction.toggle_photo"        # Unique identifier for buttons and menu items to reference.
@@ -413,6 +421,7 @@ class Recon_TogglePhoto(bpy.types.Operator):
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
+# -----------------------------------------------------------------
 class Recon_ToggleMesh(bpy.types.Operator):
     bl_idname = "reconstruction.toggle_mesh"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Toggle Mesh"         # Display name in the interface.
@@ -432,13 +441,23 @@ class Recon_ToggleMesh(bpy.types.Operator):
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
+
 # -----------------------------------------------------------------
-class Recon_SaveOrientation(bpy.types.Operator):
-    bl_idname = "reconstruction.save_orientation"        # Unique identifier for buttons and menu items to reference.
+class Recon_Orientations(bpy.types.Operator):
+    bl_idname = "reconstruction.orientations_tool"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Save camera orientation"         # Display name in the interface.
     bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
 
-    def execute(self, context):        # execute() is called when running the operator.
+    cmd: bpy.props.EnumProperty(
+        items=[('create', "Create orientation from view", ""),
+               ('switch', "Switch to camera", ""),
+               ],
+        name="Command", 
+        default='create',
+        options={'HIDDEN'} 
+        )
+
+    def do_create(self, context):        # execute() is called when running the operator.
 
         scene = context.scene
         cam = scene.camera
@@ -449,31 +468,15 @@ class Recon_SaveOrientation(bpy.types.Operator):
             if area.type == 'VIEW_3D'
         ]
 
+        #ToDo: switch to camera view and back
         print('Orientation for '+cam.name)
         bpy.ops.transform.create_orientation(name = cam.name, use_view=True, use=True, overwrite = True)
         bpy.context.scene.transform_orientation_slots[0].type = cam.name
-        """
-        orient_slot = [
-            slot for slot in
-            bpy.context.scene.transform_orientation_slots
-            if slot.custom_orientation
-                and slot.custom_orientation.name == cam.name
-        ]
-        if orient_slot:
-            orient_slot[0].custom_orientation.matrix = screen_areas[0].spaces[0].region_3d.view_matrix.to_3x3() #cam.matrix_world.to_3x3()
-        else:
-            print('Error: Could not find created transform orientation...')
-        """
 
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
-class Recon_SwitchToOrientation(bpy.types.Operator):
-    bl_idname = "reconstruction.camera2orientation"        # Unique identifier for buttons and menu items to reference.
-    bl_label = "Switch Camera by Orientation"         # Display name in the interface.
-    bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
-
-    def execute(self, context):        # execute() is called when running the operator.
+    def do_switch(self, context):        # execute() is called when running the operator.
 
         scene = context.scene
         name = bpy.context.scene.transform_orientation_slots[0].type
@@ -489,6 +492,15 @@ class Recon_SwitchToOrientation(bpy.types.Operator):
             show_camera(scene, cams[index])
 
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
+
+
+    def execute(self, context):        # execute() is called when running the operator.
+        # dispatch command
+        func = getattr(self, 'do_'+self.cmd)
+        func(context)
+
+        return {'FINISHED'}            # Lets Blender know the operator finished successfully.
+
 
 
 # -----------------------------------------------------------------
@@ -578,7 +590,8 @@ class Recon_ImportImages(bpy.types.Operator):
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
 
 
-#--------------------------
+
+# -----------------------------------------------------------------
 class Recon_ImportCameras(bpy.types.Operator):
     bl_idname = "reconstruction.load_camera"        # Unique identifier for buttons and menu items to reference.
     bl_label = "Load cameras from XML"         # Display name in the interface.
@@ -851,8 +864,8 @@ class Recon_Export_panel(bpy.types.Panel):
         layout.operator('reconstruction.export', text = 'Export').cmd='export'
 
 
+
 # -----------------------------------------------------------------
-    
 class Recon_Tools(bpy.types.Operator):
     bl_idname = "reconstruction.tools"
     bl_label = "Tools"
@@ -863,7 +876,8 @@ class Recon_Tools(bpy.types.Operator):
 
 
     cmd: bpy.props.EnumProperty(
-        items=[('set_orientation', "Set object orientation", ""),
+        items=[ ('set_orientation', "Set object orientation", ""),
+                ('measure_edge', 'Measure active edge len', ''),
                ],
         name="Command", 
         default='set_orientation',
@@ -904,13 +918,32 @@ class Recon_Tools(bpy.types.Operator):
         obj.matrix_world = new_mat
         
 
+    def measure_edge(self, context):
+        obj = bpy.context.active_object
+        if not obj or obj.type != 'MESH':
+            return
+
+        if not 'EDIT' == obj.mode:
+            return
+
+        bm = bmesh.from_edit_mesh(obj.data)
+        for elem in reversed(bm.select_history):
+            if isinstance(elem, bmesh.types.BMEdge):
+                len = 'Edge length: {:f}'.format(elem.calc_length())
+                self.report({"INFO"}, len )
+                print( len )
+                break
+    
+        bm.free()
+            
+
+
     def execute(self, context):        # execute() is called when running the operator.
         # dispatch command
         func = getattr(self, 'do_'+self.cmd)
         func(context)
 
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
-
 
 
 class Recon_Tools_panel(bpy.types.Panel):
@@ -926,12 +959,13 @@ class Recon_Tools_panel(bpy.types.Panel):
         settings = context.scene.recon_settings
         
         layout.label(text='Camera orientation')
-        layout.operator(Recon_SaveOrientation.bl_idname, text="Create orientation")
-        layout.operator(Recon_SwitchToOrientation.bl_idname, text="Switch to camera")
+        layout.operator(Recon_Orientations.bl_idname, text="Create orientation").cmd='create'
+        layout.operator(Recon_Orientations.bl_idname, text="Switch to camera").cmd='switch'
 
         layout.separator()
         layout.label(text='Miscellaneous')
-        layout.operator('reconstruction.tools', text = 'Set obj orientation').cmd='set_orientation'
+        layout.operator(Recon_Tools.bl_idname, text = 'Set obj orientation').cmd='set_orientation'
+        layout.operator(Recon_Tools.bl_idname, text = 'Edge length').cmd='measure_edge'
 
 
 #--------------------------
@@ -1122,6 +1156,7 @@ class Recon_Settings(bpy.types.PropertyGroup):
 
     
 
+# -----------------------------------------------------------------
 class Recon_ImportCameras_panel(bpy.types.Panel):
     bl_label = "Import Cameras"
     bl_category = "Photo Reconstruction"
@@ -1143,7 +1178,25 @@ class Recon_ImportCameras_panel(bpy.types.Panel):
 
         layout.operator('reconstruction.load_camera', text = 'Load cameras')
 
+        layout.separator()
+        layout.label(text='Rotate image')
 
+        row = layout.row()
+
+        op = row.operator('reconstruction.rotate_cam', text = '90 CCW')
+        op.angle=-90
+        op.rotate_hack = 1
+
+        op = row.operator('reconstruction.rotate_cam', text = '90 CW')
+        op.angle=90
+        op.rotate_hack = 1
+
+        op = layout.operator('reconstruction.rotate_cam', text = 'Flip sensor')
+        op.angle=0
+        op.rotate_hack = 1
+
+
+# -----------------------------------------------------------------
 class Recon_ImportImages_panel(bpy.types.Panel):
     bl_label = "Import Images"
     bl_category = "Photo Reconstruction"
@@ -1188,29 +1241,7 @@ class Recon_ImportImages_panel(bpy.types.Panel):
         op.rotate_hack = 1
 
 
-class Recon_RotateCam_panel(bpy.types.Panel):
-    bl_label = "Rotate camera"
-    bl_category = "Photo Reconstruction"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-
-    def draw(self, context):
-        layout = self.layout
-        row = layout.row()
-
-        op = row.operator('reconstruction.rotate_cam', text = '90 CCW')
-        op.angle=-90
-        op.rotate_hack = 1
-
-        op = row.operator('reconstruction.rotate_cam', text = '90 CW')
-        op.angle=90
-        op.rotate_hack = 1
-
-        op = layout.operator('reconstruction.rotate_cam', text = 'Flip sensor')
-        op.angle=0
-        op.rotate_hack = 1
-
-
+# -----------------------------------------------------------------
 class Recon_Nav_panel(bpy.types.Panel):
     bl_label = "Navigation"
     bl_category = "Photo Reconstruction"
@@ -1244,20 +1275,7 @@ class Recon_Nav_panel(bpy.types.Panel):
         layout.operator(Recon_SwitchCamera.bl_idname, text='Refresh').direction='refresh'
 
 
-class Recon_Orientations_panel(bpy.types.Panel):
-    bl_label = "Orientations"
-    bl_category = "Photo Reconstruction"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-
-    def draw(self, context):
-        layout = self.layout
-        #row = layout.row()
-
-        layout.operator(Recon_SaveOrientation.bl_idname, text="Save orientation")
-        layout.operator(Recon_SwitchToOrientation.bl_idname, text="Switch camera")
-
-
+# -----------------------------------------------------------------
 class Recon_Menu(bpy.types.Menu):
     bl_label = "Photo Reconstruction"
     bl_idname = "VIEW3D_MT_reconstruction_menu"
@@ -1277,17 +1295,20 @@ class Recon_Menu(bpy.types.Menu):
 #        layout.operator(Recon_ImportImages.bl_idname, text=Recon_ImportImages.bl_label)
 
 
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
 def draw_menu(self, context):
     self.layout.menu(Recon_Menu.bl_idname)    
 
 classes = ( Recon_SwitchCamera, Recon_TogglePhoto, Recon_ToggleMesh,
-            Recon_SaveOrientation, Recon_SwitchToOrientation,
             Recon_Settings, 
             Recon_Nav_panel, 
             Recon_ImportCameras, Recon_ImportCameras_panel,
             Recon_ImportImages, Recon_ImportImages_panel, 
             Recon_RotateCamera, 
             Recon_Export, Recon_List_items, Recon_Export_panel,
+            Recon_Orientations,
             Recon_Tools, Recon_Tools_panel,
             Recon_Menu)
 
@@ -1321,7 +1342,8 @@ def register():
     addon_keymaps.append((km, kmi))
 
     km = wm.keyconfigs.addon.keymaps.new(name = "Window",space_type='EMPTY', region_type='WINDOW')
-    kmi = km.keymap_items.new(Recon_SwitchToOrientation.bl_idname, 'HOME', 'PRESS', ctrl=False, shift=True)
+    kmi = km.keymap_items.new(Recon_Orientations.bl_idname, 'HOME', 'PRESS', ctrl=False, shift=True)
+    kmi.properties.cmd='switch'
     addon_keymaps.append((km, kmi))
 
 

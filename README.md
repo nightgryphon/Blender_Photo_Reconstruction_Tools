@@ -22,32 +22,32 @@ An .xml file contain all information regarding cameras including focal length an
 The .dae model contains only camera position/orientation so you has to provide focal length manually.  
 Both methods work fine but .xml requre less manual setup  
 
-### Workflow
+### Camera import workflow with .XML
 At Photo Scan:
 
-- export cameras to .XML (File->Export->Export cameras) or model to .DAE (File->Export->Export model)
-- if using .DAE: get adjusted camera focal length: Tools -> Camera Calibration -> "Adjusted" tab  
-
+- export cameras to .XML
 - export undistorted images: Export -> Undistort Photos, filename template {camera}.{fileext}
 
 At Blender: 
 
-- for .XML: "Photo Reconstruction" panel -> Import camera. Choose .xml file, press "Load cameras"
-- for .DAE: import model containig cameras (Axis orientations: Y forward, Z up)  
-
-- At "Photo Reconstruction" panel -> "Load Images" select folder with saved undistorted photos
-- For .DAE: set focal length field
-- select cameras you wish to load images for or clear "Selected only" box to use all cameras
-- if you wish to force cameras to update check "Reload images" otherwise only missing images will be loaded
-- click "Load Cameras" button
+- Open "Photo Reconstruction" panel -> Import camera. Choose .xml file, press "Load Cameras"
+- Open "Photo Reconstruction" panel -> Load Images. Select folder with saved undistorted photos, press "Load Images"
 
 
 ** "Photo Reconstruction" panel is located at the rigth side of 3D view (can be folded under [<] thing)  
 
+### Photos orientation
+If your photo set contain both vertical and horisontal captured photos it can be convenient to rotate such cameras to preserve general scene orientation on screen.  
+Use "Rotate image" section of "Import Camera/Image" tools to adjust image rotation.  
+This effect is achieved by rotating both camera and image. But this also require to adjust render area for such rotated cameras. If camera sensor/image does not fit scene try to use "Navigation" panel->"Refresh" button 
+
+
 ## Navigation
 ![Navigation panel](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/doc/NavPanel.png)
 
-Navigate through cameras with Ctrl-Left / Ctrl-Right
+- Navigate through cameras with Ctrl-Left / Ctrl-Right
+- Toggle photo visibility with Ctrl-Down
+- Toggle imported mesh visibility with Ctrl-Up ("mesh1")
 
 ### Alpha
 Change photo transparency
@@ -69,10 +69,6 @@ Criteria to choose next camera. Keep in mind that 'sorted' camera list is not re
 Distance: filter out too large jumps between cameras while navigating  
 Angle: filter cameras with view direction too different from current camera  
 
-## Orientation
-Change camera orientation with "Photo Reconstruction" panel -> Rotate camera  
-If your photo set contain both vertical and horisontal captured photos it can be convenient to rotate such cameras to preserve general scene orientation on screen.  
-This effect is achieved by rotating both camera and image. But this also require to adjust render area for such rotated cameras. If camera sensor/image does not fit scene try to use "Navigation panel"->"Refresh" button 
 
 ## Quick Export
 Allow one click export objects from export list.  
@@ -82,9 +78,14 @@ Silently overwrite selected file by exporting listed meshes in OBJ format. File 
 - No materials and UV
 - Apply modifiers, write edges, triangulate faces
 
-## Other tools:
+## Tools:
+Camera orientation:
 
-- Toggle photo visibility with Ctrl-Down
-- Toggle imported mesh visibility with Ctrl-Up ("mesh1")
 - Save current view orientation with Photo Reconstruction -> Save Orientation
 - Switch to camera according selected saved orientation Shift-Home
+
+
+Miscellaneous:
+
+- Change selected object local axis orientation to current with "Set obj orientation"
+- Measure selected edge lentgth with "Edge length"
