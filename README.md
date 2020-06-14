@@ -42,6 +42,12 @@ Use "Rotate image" section of "Import Camera/Image" tools to adjust image rotati
 This effect is achieved by rotating both camera and image. But this also require to adjust render area for such rotated cameras. If camera sensor/image does not fit scene try to use "Navigation" panel->"Refresh" button 
 
 
+## Import markers
+The existing PhotoScan marker export function only exports the marker references not the calculated marker positions. If you create marker with "Place marker" instead of "Add marker" then it will not have reference but still have position.  
+To export marker positions use the marker_positions.py which wil export markers to CSV file  
+Import markers CSV file with "Photo Reconstruction" panel -> Import markers  
+
+
 ## Navigation
 ![Navigation panel](https://raw.githubusercontent.com/nightgryphon/Blender_Photo_Reconstruction_Tools/master/doc/NavPanel.png)
 

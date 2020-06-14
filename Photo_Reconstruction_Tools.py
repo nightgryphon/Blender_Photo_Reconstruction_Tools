@@ -21,6 +21,9 @@ import os
 from xml.etree import ElementTree as ET
 import numpy as np
 import bmesh
+import csv
+import measureit
+from addon_utils import check,paths,enable
 
 
 addon_keymaps = []
@@ -608,11 +611,76 @@ class Recon_ImportCameras(bpy.types.Operator):
 
 
     def execute(self, context):        # execute() is called when running the operator.
+        def import_cam(camera, col):
+            name = camera.attrib['label']
+            transform = camera.find('transform')
+            if transform != None:
+                m_cam = Matrix(np.array(transform.text.split(' ')).astype(np.float).reshape((4,4)))
+#                print('Camera {:s}'.format(name))
+#                print(m_cam)
+                
+                cam = False
+                if name in bpy.context.scene.objects.keys():
+                    if settings.cam_update:
+                        cam = bpy.context.scene.objects[name]
+                        if not settings.cam_use_current or cam != bpy.context.scene.camera:
+                            if settings.cam_selected_only and not cam in bpy.context.selected_objects:
+                                cam = False
+                else:
+                    if settings.cam_append:
+                        print('Creating new scene camera')
+                        cam_cam = bpy.data.cameras.new(name)
+                        cam = bpy.data.objects.new(name, cam_cam)
+                        #bpy.context.scene.collection.objects.link(cam)
+                        col.objects.link(cam)
+                        
+                if cam:
+                    print('Setting up scene camera {:s}'.format(name))
+                    cam.matrix_world = self.photoscan2cam(world_r, world_t, m_cam)
+                    
+#                    print(camera.attrib['sensor_id'])
+#                    print(camera.find('orientation').text)
+                    s = sensors[camera.attrib['sensor_id']]
+                    cam.data.lens_unit = 'FOV'
+                    cam.data.angle = 2*math.atan(max(s[0], s[1])/2/s[2])
+                    cam.data['f'] = s[2]
+
+                    cam.data['rotate_hack'] = 0
+                    bg = get_bg_image(cam)
+                    if bg:
+                        bg.rotation = 0
+
+                    orientation = camera.find('orientation')
+                    if orientation != None:
+                        print('Orientation {:s}'.format(orientation.text))
+                        # '1' - original
+                        if orientation.text == '3':
+                            rotate_cam(cam, 180);
+                            cam.data['rotate_hack'] = 0
+
+                        if orientation.text == '6':
+                            rotate_cam(cam, 90);
+                            cam.data['rotate_hack'] = 1
+
+                        if orientation.text == '8':
+                            rotate_cam(cam, -90);
+                            cam.data['rotate_hack'] = 1
+
+                    if cam == bpy.context.scene.camera:
+                        adjust_render_resolution(cam)
+            
+            
         print('Loading...')
 
         settings = context.scene.recon_settings
 
         sel_cams = [obj for obj in bpy.context.selected_objects if obj.type == 'CAMERA']
+        
+        try:
+            col = bpy.data.collections['Cameras']
+        except:
+            col = bpy.data.collections.new('Cameras')
+            bpy.context.scene.collection.children.link(col)
 
         tree = ET.parse(bpy.path.abspath(settings.cam_file))            
         chunks = tree.findall('chunk')
@@ -636,67 +704,151 @@ class Recon_ImportCameras(bpy.types.Operator):
                     )
             print(sensors)
 
-            cameras = chunk.find('cameras').findall('camera')
-            for camera in cameras:
-                name = camera.attrib['label']
-                transform = camera.find('transform')
-                if transform != None:
-                    m_cam = Matrix(np.array(transform.text.split(' ')).astype(np.float).reshape((4,4)))
-#                   print('Camera {:s}'.format(name))
-#                   print(m_cam)
-                
-                    cam = False
-                    if name in bpy.context.scene.objects.keys():
-                        if settings.cam_update:
-                            cam = bpy.context.scene.objects[name]
-                            if not settings.cam_use_current or cam != bpy.context.scene.camera:
-                                if settings.cam_selected_only and not cam in bpy.context.selected_objects:
-                                    cam = False
-                    else:
-                        if settings.cam_append:
-                            print('Creating new scene camera')
-                            cam_cam = bpy.data.cameras.new(name)
-                            cam = bpy.data.objects.new(name, cam_cam)
-                            bpy.context.scene.collection.objects.link(cam)
-                        
-                    if cam:
-                        print('Setting up scene camera {:s}'.format(name))
-                        cam.matrix_world = self.photoscan2cam(world_r, world_t, m_cam)
+            cameras = chunk.find('cameras')
+            for group in cameras.findall('group'):
+                try:
+                    grpcol = col.children[group.attrib['label']]
+                except:
+                    grpcol = bpy.data.collections.new(group.attrib['label'])
+                    col.children.link(grpcol)
                     
-#                        print(camera.attrib['sensor_id'])
-#                        print(camera.find('orientation').text)
-                        s = sensors[camera.attrib['sensor_id']]
-                        cam.data.lens_unit = 'FOV'
-                        cam.data.angle = 2*math.atan(max(s[0], s[1])/2/s[2])
-                        cam.data['f'] = s[2]
+                for camera in group.findall('camera'):
+                    import_cam(camera, grpcol)
 
-                        cam.data['rotate_hack'] = 0
-                        bg = get_bg_image(cam)
-                        if bg:
-                            bg.rotation = 0
 
-                        orientation = camera.find('orientation')
-                        if orientation != None:
-                            print('Orientation {:s}'.format(orientation.text))
-                            # '1' - original
-                            if orientation.text == '3':
-                                rotate_cam(cam, 180);
-                                cam.data['rotate_hack'] = 0
-
-                            if orientation.text == '6':
-                                rotate_cam(cam, 90);
-                                cam.data['rotate_hack'] = 1
-
-                            if orientation.text == '8':
-                                rotate_cam(cam, -90);
-                                cam.data['rotate_hack'] = 1
-
-                        if cam == bpy.context.scene.camera:
-                            adjust_render_resolution(cam)
+            for camera in cameras.findall('camera'):
+                import_cam(camera, col)
 
 
         print('Done loading.')
         return {'FINISHED'}            # Lets Blender know the operator finished successfully.
+
+
+
+# -----------------------------------------------------------------
+class Recon_ImportMarkers(bpy.types.Operator):
+    bl_idname = "reconstruction.load_markers"        # Unique identifier for buttons and menu items to reference.
+    bl_label = "Load markers from XML"         # Display name in the interface.
+    bl_options = {'REGISTER', 'UNDO'}  # Enable undo for the operator.
+
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+
+                
+    def photoscan2cam(self, world_r, world_t, m_cam):
+        m = world_r.to_4x4() @ m_cam
+        m.translation += world_t
+        return m @ Matrix( ( (1,0,0,0),(0,-1,0,0),(0,0,-1,0),(0,0,0,1) ) )
+
+
+    def execute(self, context):        # execute() is called when running the operator.
+        print('Loading...')
+
+        scene = context.scene
+        settings = scene.recon_settings
+
+        try:
+            obj = bpy.context.scene.objects["Markers"]
+            mesh = obj.data
+        except:
+            mesh = bpy.data.meshes.new("Markers mesh")
+            obj  = bpy.data.objects.new("Markers", mesh)
+            bpy.context.collection.objects.link(obj)
+            
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bm.clear()
+
+        # from measureit\measureit_main.py
+        if 'MeasureGenerator' not in obj:
+            obj.MeasureGenerator.add()
+
+        mp = obj.MeasureGenerator[0]
+    
+        """
+        # load XML
+        tree = ET.parse(bpy.path.abspath(settings.markers_file))
+        chunks = tree.findall('chunk')
+        for chunk in chunks:
+            print('Chunk {:s}'.format(chunk.attrib['label']))
+            transform = chunk.find('transform')
+            world_t = Vector(np.array(transform.find('translation').text.split(' ')).astype(np.float))
+            print(world_t)
+            world_r = Matrix(np.array(transform.find('rotation').text.split(' ')).astype(np.float).reshape((3,3)))
+            print(world_r)
+            
+            m = chunk.find('markers').findall('marker')
+            for marker in m:
+                print("Marker {:s}: {:s}".format(marker.attrib['id'], marker.attrib['label']))
+                ref = marker.find('reference')
+                print(ref)
+                if None == ref:
+                    continue
+                co = Vector([float(ref.attrib['x']), float(ref.attrib['y']), float(ref.attrib['z'])])
+                print(co)
+        """
+        
+        # load python exported markers 'marker.position' .CSV
+        with open( bpy.path.abspath(settings.markers_file) ) as csvfile:
+            rdr = csv.reader( csvfile )
+            for i, row in enumerate( rdr ):
+                name, x,y,z = row[0:4]
+                co = Vector([float(x), float(y), float(z)])
+                print("Marker {:s}: {:s}".format(name, str(co) ))
+                
+                id = len(bm.verts)
+                v = bm.verts.new(co)
+
+                mp.measureit_segments.add()
+                ms = mp.measureit_segments[mp.measureit_num]
+                ms.gltype = 2
+                ms.glpointa = id
+                ms.glpointb = id
+                ms.glarrow_a = scene.measureit_glarrow_a
+                ms.glarrow_b = scene.measureit_glarrow_b
+                ms.glarrow_s = scene.measureit_glarrow_s
+                # color
+                ms.glcolor = scene.measureit_default_color
+                # dist
+                ms.glspace = scene.measureit_hint_space
+                # text
+                ms.gltxt = name
+                ms.glfont_size = scene.measureit_font_size
+                ms.glfont_align = scene.measureit_font_align
+                ms.glfont_rotat = scene.measureit_font_rotation
+                # Add index
+                mp.measureit_num += 1
+
+                
+                
+        bm.to_mesh(obj.data)
+        bm.free()
+
+        #for v in obj        
+        
+        context.area.tag_redraw()
+
+        print('Done loading.')
+        return {'FINISHED'}            # Lets Blender know the operator finished successfully.
+
+
+
+class Recon_ImportMarkers_panel(bpy.types.Panel):
+    bl_label = "Import Markers"
+    bl_category = "Photo Reconstruction"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+
+    def draw(self, context):
+        layout = self.layout
+#        row = layout.row()
+
+        settings = context.scene.recon_settings
+        layout.prop(settings, "markers_file")
+
+        layout.separator()
+
+        layout.operator(Recon_ImportMarkers.bl_idname, text="Load Markers")
 
 
 
@@ -893,11 +1045,14 @@ class Recon_Tools(bpy.types.Operator):
         mode = obj.mode
         bpy.ops.object.mode_set(mode='EDIT')
 
-        or_save = bpy.context.scene.transform_orientation_slots[0].type
-        bpy.ops.transform.create_orientation(name = 'set_orientation_temporary', use_view=False, use=True, overwrite = True)
-        new_mat = bpy.context.scene.transform_orientation_slots[0].custom_orientation.matrix.to_4x4()
-        bpy.ops.transform.delete_orientation()
-        bpy.context.scene.transform_orientation_slots[0].type = or_save
+        try:
+            new_mat = bpy.context.scene.transform_orientation_slots[0].custom_orientation.matrix.to_4x4()
+        except:
+            or_save = bpy.context.scene.transform_orientation_slots[0].type
+            bpy.ops.transform.create_orientation(name = 'set_orientation_temporary', use_view=False, use=True, overwrite = True)
+            new_mat = bpy.context.scene.transform_orientation_slots[0].custom_orientation.matrix.to_4x4()
+            bpy.ops.transform.delete_orientation()
+            bpy.context.scene.transform_orientation_slots[0].type = or_save
         
         # keep object translation
         new_mat = Matrix.Translation(old_mat.to_translation()) @ new_mat
@@ -918,7 +1073,7 @@ class Recon_Tools(bpy.types.Operator):
         obj.matrix_world = new_mat
         
 
-    def measure_edge(self, context):
+    def do_measure_edge(self, context):
         obj = bpy.context.active_object
         if not obj or obj.type != 'MESH':
             return
@@ -929,10 +1084,14 @@ class Recon_Tools(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(obj.data)
         for elem in reversed(bm.select_history):
             if isinstance(elem, bmesh.types.BMEdge):
+                bpy.context.window_manager.clipboard = elem.calc_length()
                 len = 'Edge length: {:f}'.format(elem.calc_length())
                 self.report({"INFO"}, len )
                 print( len )
                 break
+        else:
+            self.report({"ERROR"}, 'Please select edge')
+
     
         bm.free()
             
@@ -1141,6 +1300,21 @@ class Recon_Settings(bpy.types.PropertyGroup):
         default=True,
         )
         
+    # ----- LOAD MARKERS -------
+    markers_file: bpy.props.StringProperty(
+        name = 'File',
+        description = 'Markers XML file',
+#        default = os.path.dirname(bpy.data.filepath), 
+        maxlen = 1024, 
+        subtype = 'FILE_PATH'
+        )
+
+    markers_replace: bpy.props.BoolProperty(
+        name="Replace existing", 
+        description = 'Replace existing markers object',
+        default=True,
+        )
+        
     # ----- EXPORT -------
     export_file: bpy.props.StringProperty(
         name = 'File',
@@ -1306,6 +1480,7 @@ classes = ( Recon_SwitchCamera, Recon_TogglePhoto, Recon_ToggleMesh,
             Recon_Nav_panel, 
             Recon_ImportCameras, Recon_ImportCameras_panel,
             Recon_ImportImages, Recon_ImportImages_panel, 
+            Recon_ImportMarkers, Recon_ImportMarkers_panel,
             Recon_RotateCamera, 
             Recon_Export, Recon_List_items, Recon_Export_panel,
             Recon_Orientations,
@@ -1313,7 +1488,40 @@ classes = ( Recon_SwitchCamera, Recon_TogglePhoto, Recon_ToggleMesh,
             Recon_Menu)
 
 
+# https://blenderartists.org/t/check-if-add-on-is-enabled-using-python/522226
+def get_all_addons(display=False):
+    """
+    Prints the addon state based on the user preferences.
+    """
+    import sys
+
+
+    # RELEASE SCRIPTS: official scripts distributed in Blender releases
+    paths_list = paths()
+    addon_list = []
+    for path in paths_list:
+        bpy.utils._sys_path_ensure(path)
+        for mod_name, mod_path in bpy.path.module_names(path):
+            is_enabled, is_loaded = check(mod_name)
+            addon_list.append(mod_name)
+            if display:  #for example
+                print("%s default:%s loaded:%s"%(mod_name,is_enabled,is_loaded))
+            
+    return(addon_list)
+
+
 def register():
+    addons = get_all_addons()
+    addon_dependencies = ['measureit']
+    for addon in addon_dependencies:
+        if addon in addons:
+            is_enabled, is_loaded = check(addon)
+            if not is_enabled:
+                enable(addon)
+        else:
+            print("Error Dependency %s missing"%addon)
+        
+    
     for cls in classes:
         bpy.utils.register_class(cls)
 
